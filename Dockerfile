@@ -24,6 +24,8 @@ COPY --from=builder /install /usr/local
 WORKDIR /app
 COPY . .
 
+ENV PYTHONPATH=/app
+
 RUN useradd -m -r appuser \
     && mkdir -p /data/images \
     && chown -R appuser:appuser /app /data
