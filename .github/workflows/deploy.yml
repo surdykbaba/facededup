@@ -27,7 +27,8 @@ jobs:
             cd /home/deployer/facededup
 
             echo "=== Pulling latest code ==="
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
 
             echo "=== Building Docker images ==="
             docker compose -f docker-compose.prod.yaml build
