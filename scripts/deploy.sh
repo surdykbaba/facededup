@@ -15,7 +15,7 @@ if [ ! -f .env ]; then
 fi
 
 echo "[1/6] Pulling latest code..."
-git pull origin main
+git pull origin main 2>/dev/null || echo "  Skipped pull (first deploy or no remote)."
 
 echo "[2/6] Building Docker images..."
 docker compose -f "$COMPOSE_FILE" build
