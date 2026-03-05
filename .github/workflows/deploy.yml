@@ -1,0 +1,57 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to DigitalOcean
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          script_stop: true
+          timeout: 600s
+          script: |
+            set -e
+            cd /home/deployer/facededup
+
+            echo "=== Pulling latest code ==="
+            git pull origin main
+
+            echo "=== Building Docker images ==="
+            docker compose -f docker-compose.prod.yaml build
+
+            echo "=== Restarting services ==="
+            docker compose -f docker-compose.prod.yaml up -d --remove-orphans
+
+            echo "=== Waiting for API to be healthy ==="
+            for i in $(seq 1 60); do
+              if curl -sf http://localhost:8000/api/v1/health > /dev/null 2>&1; then
+                echo "API is healthy!"
+                break
+              fi
+              if [ "$i" -eq 60 ]; then
+                echo "ERROR: API failed health check after 60 seconds"
+                docker compose -f docker-compose.prod.yaml logs --tail=50 api
+                exit 1
+              fi
+              sleep 2
+            done
+
+            echo "=== Running database migrations ==="
+            docker compose -f docker-compose.prod.yaml exec -T api alembic upgrade head
+
+            echo "=== Deployment complete ==="
+            curl -s http://localhost:8000/api/v1/health | python3 -m json.tool
