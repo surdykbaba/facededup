@@ -1,0 +1,764 @@
+{
+	"info": {
+		"_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+		"name": "FaceDedup API",
+		"description": "FaceDedup is a facial recognition and deduplication API built on InsightFace. It provides endpoints for enrolling face records, matching faces against enrolled records, comparing two faces directly, passive liveness detection, and running bulk deduplication passes.\n\nAuthentication is via the X-API-Key header on all endpoints except /health.\n\nBase URL defaults to http://localhost:8000. All endpoints are prefixed with /api/v1.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "apikey",
+		"apikey": [
+			{
+				"key": "key",
+				"value": "X-API-Key",
+				"type": "string"
+			},
+			{
+				"key": "value",
+				"value": "{{api_key}}",
+				"type": "string"
+			},
+			{
+				"key": "in",
+				"value": "header",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "api_key",
+			"value": "your-api-key-here",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Health",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"health"
+							]
+						},
+						"description": "Check the health status of the API, database, Redis, and face model. No authentication required."
+					},
+					"response": [
+						{
+							"name": "Healthy",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/health",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"health"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"status\": \"healthy\",\n  \"database\": \"healthy\",\n  \"redis\": \"healthy\",\n  \"face_model\": \"loaded\",\n  \"gpu_enabled\": true,\n  \"version\": \"1.0.0\"\n}"
+						}
+					]
+				}
+			],
+			"description": "Health and status checks."
+		},
+		{
+			"name": "Enroll",
+			"item": [
+				{
+					"name": "Enroll Face",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"description": "Face image (JPEG/PNG/WebP)",
+									"type": "file",
+									"src": ""
+								},
+								{
+									"key": "name",
+									"value": "John Doe",
+									"description": "Person name",
+									"type": "text"
+								},
+								{
+									"key": "external_id",
+									"value": "EMP-2024-001",
+									"description": "External reference ID",
+									"type": "text"
+								},
+								{
+									"key": "metadata",
+									"value": "{\"department\": \"Engineering\", \"location\": \"Lagos\"}",
+									"description": "JSON metadata string",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/enroll",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"enroll"
+							]
+						},
+						"description": "Enroll a new face record. Accepts a face image with optional metadata. Detects the face, extracts a 512-dim embedding, and stores the record."
+					},
+					"response": [
+						{
+							"name": "Enrolled Successfully",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "image",
+											"type": "file",
+											"src": ""
+										},
+										{
+											"key": "name",
+											"value": "John Doe",
+											"type": "text"
+										},
+										{
+											"key": "external_id",
+											"value": "EMP-2024-001",
+											"type": "text"
+										},
+										{
+											"key": "metadata",
+											"value": "{\"department\": \"Engineering\", \"location\": \"Lagos\"}",
+											"type": "text"
+										}
+									]
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/enroll",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"enroll"
+									]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"id\": \"d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8\",\n  \"name\": \"John Doe\",\n  \"external_id\": \"EMP-2024-001\",\n  \"face_info\": {\n    \"bbox\": [102, 85, 318, 370],\n    \"det_score\": 0.9987,\n    \"landmark_count\": 5,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"created_at\": \"2025-08-15T10:23:45.123456\"\n}"
+						}
+					]
+				}
+			],
+			"description": "Enroll face records into the database."
+		},
+		{
+			"name": "Match",
+			"item": [
+				{
+					"name": "Match Face",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"description": "Query face image",
+									"type": "file",
+									"src": ""
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/match?threshold=0.6&limit=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"match"
+							],
+							"query": [
+								{
+									"key": "threshold",
+									"value": "0.6",
+									"description": "Minimum similarity threshold (0-1). Uses server default if omitted."
+								},
+								{
+									"key": "limit",
+									"value": "10",
+									"description": "Max results to return (1-100, default 10)"
+								}
+							]
+						},
+						"description": "Match a face image against all enrolled records. Returns a ranked list of matching records with similarity scores."
+					},
+					"response": [
+						{
+							"name": "Matches Found",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "image",
+											"type": "file",
+											"src": ""
+										}
+									]
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/match?threshold=0.6&limit=10",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"match"
+									],
+									"query": [
+										{
+											"key": "threshold",
+											"value": "0.6"
+										},
+										{
+											"key": "limit",
+											"value": "10"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"query_face_info\": {\n    \"bbox\": [95, 78, 310, 365],\n    \"det_score\": 0.9992,\n    \"landmark_count\": 5,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"matches\": [\n    {\n      \"record_id\": \"d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8\",\n      \"name\": \"John Doe\",\n      \"external_id\": \"EMP-2024-001\",\n      \"similarity\": 0.9541,\n      \"metadata\": {\n        \"department\": \"Engineering\",\n        \"location\": \"Lagos\"\n      }\n    },\n    {\n      \"record_id\": \"a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d\",\n      \"name\": \"Jane Smith\",\n      \"external_id\": \"EMP-2024-015\",\n      \"similarity\": 0.6234,\n      \"metadata\": {\n        \"department\": \"Marketing\",\n        \"location\": \"Abuja\"\n      }\n    }\n  ],\n  \"threshold\": 0.6,\n  \"total_matches\": 2\n}"
+						}
+					]
+				}
+			],
+			"description": "Match faces against enrolled records."
+		},
+		{
+			"name": "Compare",
+			"item": [
+				{
+					"name": "Compare Two Faces",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image_a",
+									"description": "First face image",
+									"type": "file",
+									"src": ""
+								},
+								{
+									"key": "image_b",
+									"description": "Second face image",
+									"type": "file",
+									"src": ""
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/compare?threshold=0.6",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"compare"
+							],
+							"query": [
+								{
+									"key": "threshold",
+									"value": "0.6",
+									"description": "Similarity threshold to determine a match (0-1). Uses server default if omitted."
+								}
+							]
+						},
+						"description": "Compare two face images directly and return a similarity score. No database lookup -- just a 1:1 face comparison."
+					},
+					"response": [
+						{
+							"name": "Comparison Result - Match",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "image_a",
+											"type": "file",
+											"src": ""
+										},
+										{
+											"key": "image_b",
+											"type": "file",
+											"src": ""
+										}
+									]
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/compare?threshold=0.6",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"compare"
+									],
+									"query": [
+										{
+											"key": "threshold",
+											"value": "0.6"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"similarity\": 0.9412,\n  \"match\": true,\n  \"threshold\": 0.6,\n  \"face_a_info\": {\n    \"bbox\": [102, 85, 318, 370],\n    \"det_score\": 0.9987,\n    \"landmark_count\": 5,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"face_b_info\": {\n    \"bbox\": [88, 72, 295, 348],\n    \"det_score\": 0.9974,\n    \"landmark_count\": 5,\n    \"age\": 33,\n    \"gender\": \"M\"\n  }\n}"
+						}
+					]
+				}
+			],
+			"description": "Compare two face images directly without database lookup."
+		},
+		{
+			"name": "Liveness",
+			"item": [
+				{
+					"name": "Liveness Check",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"description": "Face image to check for liveness",
+									"type": "file",
+									"src": ""
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/liveness",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"liveness"
+							]
+						},
+						"description": "Passive liveness detection on a single face image. Analyzes image quality, texture, color, and face geometry to determine if the face is from a live person or a spoof (photo, screen, mask). Must pass at least 5 of 6 checks to be considered live."
+					},
+					"response": [
+						{
+							"name": "Live Face Detected",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "image",
+											"type": "file",
+											"src": ""
+										}
+									]
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/liveness",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"liveness"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"is_live\": true,\n  \"liveness_score\": 0.92,\n  \"checks_passed\": 6,\n  \"checks_total\": 6,\n  \"checks\": {\n    \"detection_confidence\": {\n      \"score\": 0.9987,\n      \"passed\": true,\n      \"detail\": \"Detection score 0.999 exceeds threshold 0.5\"\n    },\n    \"sharpness\": {\n      \"score\": 0.85,\n      \"passed\": true,\n      \"detail\": \"Image sharpness 0.85 above minimum 0.3\"\n    },\n    \"texture\": {\n      \"score\": 0.78,\n      \"passed\": true,\n      \"detail\": \"LBP variance 0.78 indicates natural skin texture\"\n    },\n    \"color_distribution\": {\n      \"score\": 0.91,\n      \"passed\": true,\n      \"detail\": \"Color histogram distribution is natural\"\n    },\n    \"face_size_ratio\": {\n      \"score\": 0.65,\n      \"passed\": true,\n      \"detail\": \"Face occupies 42% of image area\"\n    },\n    \"glare_detection\": {\n      \"score\": 0.88,\n      \"passed\": true,\n      \"detail\": \"No significant glare or reflection detected\"\n    }\n  },\n  \"face_info\": {\n    \"bbox\": [102, 85, 318, 370],\n    \"det_score\": 0.9987,\n    \"landmark_count\": 5,\n    \"age\": 28,\n    \"gender\": \"F\"\n  }\n}"
+						}
+					]
+				}
+			],
+			"description": "Passive liveness detection to determine if a face image is from a live person or a spoof."
+		},
+		{
+			"name": "Deduplicate",
+			"item": [
+				{
+					"name": "Run Deduplication",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/deduplicate?threshold=0.85&batch_size=100",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"deduplicate"
+							],
+							"query": [
+								{
+									"key": "threshold",
+									"value": "0.85",
+									"description": "Similarity threshold for duplicate detection (0-1). Uses server default if omitted."
+								},
+								{
+									"key": "batch_size",
+									"value": "100",
+									"description": "Batch size for processing (10-1000, default 100)"
+								}
+							]
+						},
+						"description": "Run a full deduplication pass on all enrolled records. Scans every record and finds pairs exceeding the similarity threshold. This operation can be slow for large datasets."
+					},
+					"response": [
+						{
+							"name": "Duplicates Found",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/deduplicate?threshold=0.85&batch_size=100",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"deduplicate"
+									],
+									"query": [
+										{
+											"key": "threshold",
+											"value": "0.85"
+										},
+										{
+											"key": "batch_size",
+											"value": "100"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"total_records\": 250,\n  \"duplicate_pairs\": [\n    {\n      \"record_a\": {\n        \"id\": \"d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8\",\n        \"name\": \"John Doe\",\n        \"external_id\": \"EMP-2024-001\"\n      },\n      \"record_b\": {\n        \"id\": \"f7e8d9c0-b1a2-4c3d-e4f5-a6b7c8d9e0f1\",\n        \"name\": \"Jon Doe\",\n        \"external_id\": \"EMP-2024-042\"\n      },\n      \"similarity\": 0.9623\n    },\n    {\n      \"record_a\": {\n        \"id\": \"a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d\",\n        \"name\": \"Jane Smith\",\n        \"external_id\": \"EMP-2024-015\"\n      },\n      \"record_b\": {\n        \"id\": \"b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e\",\n        \"name\": \"Jane A. Smith\",\n        \"external_id\": \"EMP-2024-089\"\n      },\n      \"similarity\": 0.8871\n    }\n  ],\n  \"total_duplicates\": 2,\n  \"threshold\": 0.85\n}"
+						}
+					]
+				}
+			],
+			"description": "Bulk deduplication across all enrolled face records."
+		},
+		{
+			"name": "Records",
+			"item": [
+				{
+					"name": "Get Record",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/records/:record_id",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"records",
+								":record_id"
+							],
+							"variable": [
+								{
+									"key": "record_id",
+									"value": "d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8",
+									"description": "UUID of the face record to retrieve"
+								}
+							]
+						},
+						"description": "Retrieve a specific face record by its UUID."
+					},
+					"response": [
+						{
+							"name": "Record Found",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/records/:record_id",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"records",
+										":record_id"
+									],
+									"variable": [
+										{
+											"key": "record_id",
+											"value": "d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"id\": \"d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8\",\n  \"name\": \"John Doe\",\n  \"external_id\": \"EMP-2024-001\",\n  \"metadata\": {\n    \"department\": \"Engineering\",\n    \"location\": \"Lagos\"\n  },\n  \"image_path\": \"images/d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8.jpg\",\n  \"created_at\": \"2025-08-15T10:23:45.123456\",\n  \"updated_at\": \"2025-08-15T10:23:45.123456\"\n}"
+						},
+						{
+							"name": "Record Not Found",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/records/:record_id",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"records",
+										":record_id"
+									],
+									"variable": [
+										{
+											"key": "record_id",
+											"value": "00000000-0000-0000-0000-000000000000"
+										}
+									]
+								}
+							},
+							"status": "Not Found",
+							"code": 404,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"error\": \"RecordNotFoundError\",\n  \"detail\": \"Record 00000000-0000-0000-0000-000000000000 not found\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Delete Record",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/records/:record_id",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"records",
+								":record_id"
+							],
+							"variable": [
+								{
+									"key": "record_id",
+									"value": "d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8",
+									"description": "UUID of the face record to delete"
+								}
+							]
+						},
+						"description": "Delete a face record and its associated image file by UUID."
+					},
+					"response": [
+						{
+							"name": "Record Deleted",
+							"originalRequest": {
+								"method": "DELETE",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/records/:record_id",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"records",
+										":record_id"
+									],
+									"variable": [
+										{
+											"key": "record_id",
+											"value": "d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"id\": \"d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8\",\n  \"deleted\": true\n}"
+						},
+						{
+							"name": "Record Not Found",
+							"originalRequest": {
+								"method": "DELETE",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/records/:record_id",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"records",
+										":record_id"
+									],
+									"variable": [
+										{
+											"key": "record_id",
+											"value": "00000000-0000-0000-0000-000000000000"
+										}
+									]
+								}
+							},
+							"status": "Not Found",
+							"code": 404,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"error\": \"RecordNotFoundError\",\n  \"detail\": \"Record 00000000-0000-0000-0000-000000000000 not found\"\n}"
+						}
+					]
+				}
+			],
+			"description": "Retrieve and manage individual face records."
+		}
+	]
+}

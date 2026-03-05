@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+data/images/*
+!data/images/.gitkeep
+
+# InsightFace models
+~/.insightface/
+
+# Alembic
+alembic/versions/__pycache__/
+
+# Test
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Docker
+*.log

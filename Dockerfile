@@ -1,0 +1,38 @@
+# ---- Builder Stage ----
+FROM python:3.12-slim AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements/prod.txt requirements.txt
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# ---- Runtime Stage ----
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libgomp1 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /install /usr/local
+
+WORKDIR /app
+COPY . .
+
+RUN useradd -m -r appuser \
+    && mkdir -p /data/images \
+    && chown -R appuser:appuser /app /data
+
+USER appuser
+
+# Pre-download the InsightFace model at build time
+RUN python -c "from insightface.app import FaceAnalysis; FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])"
+
+EXPOSE 8000
+
+CMD ["gunicorn", "app.main:app", "-c", "gunicorn.conf.py"]
