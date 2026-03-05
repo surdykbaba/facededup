@@ -28,7 +28,7 @@
 	"variable": [
 		{
 			"key": "base_url",
-			"value": "http://localhost:8000",
+			"value": "https://face.ninauth.com",
 			"type": "string"
 		},
 		{
@@ -130,6 +130,13 @@
 									"value": "{\"department\": \"Engineering\", \"location\": \"Lagos\"}",
 									"description": "JSON metadata string",
 									"type": "text"
+								},
+								{
+									"key": "skip_liveness",
+									"value": "false",
+									"description": "Skip liveness check (admin override). Default: false",
+									"type": "text",
+									"disabled": true
 								}
 							]
 						},
@@ -144,7 +151,7 @@
 								"enroll"
 							]
 						},
-						"description": "Enroll a new face record. Accepts a face image with optional metadata. Detects the face, extracts a 512-dim embedding, and stores the record."
+						"description": "Enroll a new face record with liveness/anti-spoof validation. Runs 11 checks (landmark quality, skin tone, DCT frequency, etc.) to reject cartoons, printed photos, and screen replays. Use skip_liveness=true to bypass."
 					},
 					"response": [
 						{
@@ -198,7 +205,7 @@
 									"value": "application/json"
 								}
 							],
-							"body": "{\n  \"id\": \"d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8\",\n  \"name\": \"John Doe\",\n  \"external_id\": \"EMP-2024-001\",\n  \"face_info\": {\n    \"bbox\": [102, 85, 318, 370],\n    \"det_score\": 0.9987,\n    \"landmark_count\": 5,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"created_at\": \"2025-08-15T10:23:45.123456\"\n}"
+							"body": "{\n  \"id\": \"d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8\",\n  \"name\": \"John Doe\",\n  \"external_id\": \"EMP-2024-001\",\n  \"face_info\": {\n    \"bbox\": [\n      102,\n      85,\n      318,\n      370\n    ],\n    \"det_score\": 0.9987,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"liveness_info\": {\n    \"is_live\": true,\n    \"liveness_score\": 0.9091,\n    \"checks_passed\": 10,\n    \"checks_total\": 11,\n    \"mandatory_checks_passed\": 5,\n    \"mandatory_checks_total\": 5\n  },\n  \"created_at\": \"2025-08-15T10:23:45.123456\"\n}"
 						}
 					]
 				}
@@ -346,7 +353,7 @@
 								}
 							]
 						},
-						"description": "Compare two face images directly and return a similarity score. No database lookup -- just a 1:1 face comparison."
+						"description": "Passive liveness detection with 11 anti-spoof checks in two tiers: 5 mandatory (detection confidence, landmark quality, skin tone, DCT frequency, glare) + 6 optional (sharpness, texture, color, face size, embedding quality, edge density). Catches cartoons, printed photos, and screen replays."
 					},
 					"response": [
 						{
@@ -396,7 +403,7 @@
 									"value": "application/json"
 								}
 							],
-							"body": "{\n  \"similarity\": 0.9412,\n  \"match\": true,\n  \"threshold\": 0.6,\n  \"face_a_info\": {\n    \"bbox\": [102, 85, 318, 370],\n    \"det_score\": 0.9987,\n    \"landmark_count\": 5,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"face_b_info\": {\n    \"bbox\": [88, 72, 295, 348],\n    \"det_score\": 0.9974,\n    \"landmark_count\": 5,\n    \"age\": 33,\n    \"gender\": \"M\"\n  }\n}"
+							"body": "{\n  \"is_live\": true,\n  \"liveness_score\": 0.9091,\n  \"checks_passed\": 10,\n  \"checks_total\": 11,\n  \"mandatory_checks_passed\": 5,\n  \"mandatory_checks_total\": 5,\n  \"checks\": {\n    \"detection_confidence\": {\n      \"score\": 0.9987,\n      \"passed\": true,\n      \"detail\": \"Detection score: 0.9987 (min: 0.85)\",\n      \"mandatory\": true\n    },\n    \"landmark_quality\": {\n      \"score\": 0.75,\n      \"passed\": true,\n      \"detail\": \"Landmark quality: 0.7500 (eye_ratio=0.380, symmetry=0.920)\",\n      \"mandatory\": true\n    },\n    \"skin_tone\": {\n      \"score\": 0.42,\n      \"passed\": true,\n      \"detail\": \"Skin pixel ratio: 0.4200 (min: 0.15), flat_fill=False\",\n      \"mandatory\": true\n    },\n    \"frequency_analysis\": {\n      \"score\": 0.045,\n      \"passed\": true,\n      \"detail\": \"DCT high-freq ratio: 0.045000 (min: 0.02)\",\n      \"mandatory\": true\n    },\n    \"glare_detection\": {\n      \"score\": 0.012,\n      \"passed\": true,\n      \"detail\": \"Glare pixel ratio: 0.0120 (max: 0.05)\",\n      \"mandatory\": true\n    },\n    \"sharpness\": {\n      \"score\": 245.5,\n      \"passed\": true,\n      \"detail\": \"Laplacian variance: 245.50 (range: 80.0-2000.0)\",\n      \"mandatory\": false\n    },\n    \"texture\": {\n      \"score\": 580.3,\n      \"passed\": true,\n      \"detail\": \"LBP variance: 580.30 (min: 400.0)\",\n      \"mandatory\": false\n    },\n    \"color_distribution\": {\n      \"score\": 35.2,\n      \"passed\": true,\n      \"detail\": \"Avg channel std: 35.20 (min: 20.0)\",\n      \"mandatory\": false\n    },\n    \"face_size_ratio\": {\n      \"score\": 0.32,\n      \"passed\": true,\n      \"detail\": \"Face/image ratio: 0.3200 (range: 0.05-0.8)\",\n      \"mandatory\": false\n    },\n    \"embedding_quality\": {\n      \"score\": 22.5,\n      \"passed\": true,\n      \"detail\": \"Embedding L2 norm: 22.50 (range: 15.0-35.0)\",\n      \"mandatory\": false\n    },\n    \"edge_density\": {\n      \"score\": 0.12,\n      \"passed\": false,\n      \"detail\": \"Edge density: 0.1200 (range: 0.04-0.35), uniformity_std: 0.0800\",\n      \"mandatory\": false\n    }\n  },\n  \"face_info\": {\n    \"bbox\": [\n      102,\n      85,\n      318,\n      370\n    ],\n    \"det_score\": 0.9987,\n    \"age\": 28,\n    \"gender\": \"F\"\n  }\n}"
 						}
 					]
 				}

@@ -37,6 +37,11 @@ class RecordNotFoundError(FaceDeduplicationError):
     detail = "Record not found"
 
 
+class LivenessCheckFailedError(FaceDeduplicationError):
+    status_code = 422
+    detail = "Image failed liveness/quality checks"
+
+
 async def face_error_handler(
     request: Request, exc: FaceDeduplicationError
 ) -> JSONResponse:

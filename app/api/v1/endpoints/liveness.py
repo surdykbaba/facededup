@@ -22,20 +22,15 @@ async def check_liveness(
     _api_key: str = Depends(verify_api_key),
     _rate_limit: None = Depends(rate_limit_dependency),
 ) -> LivenessResponse:
-    """Passive liveness detection on a single face image.
+    """Passive liveness detection with anti-spoof analysis.
 
-    Analyzes image quality, texture, color, and face geometry to determine
-    if the face is from a live person or a spoof (photo, screen, mask).
+    Runs 11 checks in two tiers:
+    - 5 mandatory checks (all must pass): detection confidence, landmark quality,
+      skin tone validation, DCT frequency analysis, glare detection
+    - 6 optional checks (allow 1 failure): sharpness, texture, color distribution,
+      face size ratio, embedding quality, edge density
 
-    Checks performed:
-    - Detection confidence
-    - Image sharpness (blur detection)
-    - Texture analysis (LBP variance)
-    - Color distribution
-    - Face-to-image size ratio
-    - Glare/reflection detection
-
-    Must pass at least 5 of 6 checks to be considered live.
+    Catches: cartoons, printed photo attacks, screen replay attacks.
     """
     image_bytes = await image.read()
     validate_image(image_bytes)

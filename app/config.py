@@ -42,6 +42,27 @@ class Settings(BaseSettings):
         parts = self.FACE_DET_SIZE.split(",")
         return (int(parts[0]), int(parts[1]))
 
+    # Liveness detection
+    LIVENESS_ENABLED: bool = True
+    LIVENESS_ENROLL_REQUIRED: bool = True
+    LIVENESS_DET_SCORE_MIN: float = 0.85
+    LIVENESS_SHARPNESS_MIN: float = 80.0
+    LIVENESS_SHARPNESS_MAX: float = 2000.0
+    LIVENESS_LBP_VARIANCE_MIN: float = 400.0
+    LIVENESS_COLOR_STD_MIN: float = 20.0
+    LIVENESS_FACE_SIZE_RATIO_MIN: float = 0.05
+    LIVENESS_FACE_SIZE_RATIO_MAX: float = 0.80
+    LIVENESS_GLARE_RATIO_MAX: float = 0.05
+    LIVENESS_LANDMARK_QUALITY_MIN: float = 0.65
+    LIVENESS_EMBEDDING_NORM_MIN: float = 15.0
+    LIVENESS_EMBEDDING_NORM_MAX: float = 35.0
+    LIVENESS_SKIN_PIXEL_RATIO_MIN: float = 0.15
+    LIVENESS_SKIN_SAT_MIN: int = 15
+    LIVENESS_SKIN_SAT_MAX: int = 200
+    LIVENESS_DCT_HIGH_FREQ_MIN: float = 0.02
+    LIVENESS_EDGE_DENSITY_MIN: float = 0.04
+    LIVENESS_EDGE_DENSITY_MAX: float = 0.35
+
     # Storage
     IMAGE_STORAGE_PATH: str = "/data/images"
     MAX_IMAGE_SIZE_MB: int = 10
