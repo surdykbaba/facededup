@@ -72,7 +72,7 @@ class Settings(BaseSettings):
 
     # ML Anti-Spoofing (Silent-Face-Anti-Spoofing)
     ANTISPOOF_ENABLED: bool = True
-    ANTISPOOF_REAL_SCORE_MIN: float = 0.65
+    ANTISPOOF_REAL_SCORE_MIN: float = 0.53
 
     # Multi-frame liveness detection
     MULTIFRAME_LIVENESS_ENABLED: bool = True

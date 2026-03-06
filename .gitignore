@@ -41,5 +41,13 @@ alembic/versions/__pycache__/
 htmlcov/
 .pytest_cache/
 
+# Training (large data/checkpoints)
+training/.venv/
+training/raw_data/
+training/datasets/
+training/checkpoints/
+training/exports/
+training/logs/
+
 # Docker
 *.log

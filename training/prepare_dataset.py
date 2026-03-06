@@ -33,7 +33,6 @@ import sys
 
 import cv2
 import numpy as np
-from insightface.app import FaceAnalysis
 
 
 def crop_face(image, bbox, scale, out_size=(80, 80)):
@@ -74,6 +73,118 @@ def crop_face(image, bbox, scale, out_size=(80, 80)):
 
     resized = cv2.resize(crop, out_size, interpolation=cv2.INTER_LINEAR)
     return resized
+
+
+def scale_crop(image, scale, out_size=(80, 80)):
+    """Apply scale-based center crop for pre-cropped face images.
+
+    Lower scale → more of the original image (wider context).
+    Higher scale → tighter center crop.
+
+    Args:
+        image:    Face image (numpy BGR array)
+        scale:    Scale factor (2.7 = wide, 4.0 = tight)
+        out_size: Output dimensions (width, height)
+    """
+    h, w = image.shape[:2]
+
+    # Scale determines crop ratio: higher scale = tighter crop
+    # scale 2.7 → keep ~90% of image (wide context)
+    # scale 4.0 → keep ~65% of image (tight face)
+    keep_ratio = min(1.0, 2.7 / scale)
+
+    crop_w = int(w * keep_ratio)
+    crop_h = int(h * keep_ratio)
+
+    x1 = (w - crop_w) // 2
+    y1 = (h - crop_h) // 2
+
+    crop = image[y1:y1 + crop_h, x1:x1 + crop_w]
+    resized = cv2.resize(crop, out_size, interpolation=cv2.INTER_LINEAR)
+    return resized
+
+
+def process_directory_precropped(input_dir, output_dir, scales, out_size,
+                                  val_split, seed):
+    """Process pre-cropped face images (no face detection needed)."""
+    random.seed(seed)
+
+    classes = sorted(
+        d for d in os.listdir(input_dir)
+        if os.path.isdir(os.path.join(input_dir, d))
+    )
+
+    if not classes:
+        print(f"ERROR: No class directories found in {input_dir}")
+        print("Expected structure: input_dir/0/, input_dir/1/, input_dir/2/")
+        sys.exit(1)
+
+    print(f"Found classes: {classes}")
+
+    for scale in scales:
+        scale_name = f"{scale}_80x80"
+        for split in ["train", "val"]:
+            for cls in classes:
+                os.makedirs(
+                    os.path.join(output_dir, scale_name, split, cls),
+                    exist_ok=True,
+                )
+
+    stats = {"total": 0, "processed": 0, "skipped": 0}
+
+    for cls in classes:
+        cls_dir = os.path.join(input_dir, cls)
+        files = sorted(
+            f for f in os.listdir(cls_dir)
+            if f.lower().rsplit(".", 1)[-1] in {"jpg", "jpeg", "png", "bmp", "webp"}
+        )
+
+        random.shuffle(files)
+        split_idx = int(len(files) * (1.0 - val_split))
+        train_files = files[:split_idx]
+        val_files = files[split_idx:]
+
+        for split_name, split_files in [("train", train_files), ("val", val_files)]:
+            for fname in split_files:
+                fpath = os.path.join(cls_dir, fname)
+                stats["total"] += 1
+
+                image = cv2.imread(fpath)
+                if image is None:
+                    stats["skipped"] += 1
+                    continue
+
+                # Generate crops at each scale
+                for scale in scales:
+                    crop = scale_crop(image, scale, out_size)
+                    if crop is None:
+                        continue
+
+                    scale_name = f"{scale}_80x80"
+                    out_path = os.path.join(
+                        output_dir, scale_name, split_name, cls,
+                        fname.rsplit(".", 1)[0] + ".png",
+                    )
+                    cv2.imwrite(out_path, crop)
+
+                stats["processed"] += 1
+
+                if stats["processed"] % 200 == 0:
+                    print(
+                        f"  Processed {stats['processed']}/{stats['total']} images"
+                    )
+
+    print(f"\nDone! {stats['processed']} images processed, "
+          f"{stats['skipped']} skipped")
+
+    # Print dataset summary
+    for scale in scales:
+        scale_name = f"{scale}_80x80"
+        for split in ["train", "val"]:
+            for cls in classes:
+                d = os.path.join(output_dir, scale_name, split, cls)
+                count = len(os.listdir(d)) if os.path.exists(d) else 0
+                print(f"  {scale_name}/{split}/{cls}: {count} images")
 
 
 def process_directory(input_dir, output_dir, face_app, scales, out_size,
@@ -202,16 +313,13 @@ def main():
         "--seed", type=int, default=42,
         help="Random seed for train/val split (default: 42)",
     )
+    parser.add_argument(
+        "--skip-detect", action="store_true",
+        help="Skip face detection (for pre-cropped face images)",
+    )
     args = parser.parse_args()
 
     out_size = (args.size, args.size)
-
-    print("Initializing face detector (InsightFace)...")
-    face_app = FaceAnalysis(
-        name="buffalo_l",
-        providers=["CPUExecutionProvider"],
-    )
-    face_app.prepare(ctx_id=0, det_size=(args.det_size, args.det_size))
 
     print(f"Processing images from: {args.input_dir}")
     print(f"Scales: {args.scales}")
@@ -219,10 +327,24 @@ def main():
     print(f"Val split: {args.val_split}")
     print()
 
-    process_directory(
-        args.input_dir, args.output_dir, face_app,
-        args.scales, out_size, args.val_split, args.seed,
-    )
+    if args.skip_detect:
+        print("Mode: Pre-cropped faces (skipping face detection)")
+        process_directory_precropped(
+            args.input_dir, args.output_dir,
+            args.scales, out_size, args.val_split, args.seed,
+        )
+    else:
+        print("Initializing face detector (InsightFace)...")
+        from insightface.app import FaceAnalysis
+        face_app = FaceAnalysis(
+            name="buffalo_l",
+            providers=["CPUExecutionProvider"],
+        )
+        face_app.prepare(ctx_id=0, det_size=(args.det_size, args.det_size))
+        process_directory(
+            args.input_dir, args.output_dir, face_app,
+            args.scales, out_size, args.val_split, args.seed,
+        )
 
 
 if __name__ == "__main__":

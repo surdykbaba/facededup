@@ -49,9 +49,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 MODEL_MAP = {
-    "V1": (MiniFASNetV1, 48),
+    # (model_fn, ft_channels) — ft_channels must match conv_5 output channels
+    # "1.8M" config: conv_5 = [[192,96,192]] → output 192
+    # "1.8M_" config: conv_5 = [[128,64,128]] → output 128
+    "V1": (MiniFASNetV1, 192),
     "V2": (MiniFASNetV2, 128),
-    "V1SE": (MiniFASNetV1SE, 48),
+    "V1SE": (MiniFASNetV1SE, 192),
     "V2SE": (MiniFASNetV2SE, 128),
 }
 

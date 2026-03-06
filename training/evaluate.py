@@ -187,7 +187,7 @@ def compute_auc(labels, real_scores):
     fpr_sorted = [p[0] for p in pairs]
     tpr_sorted = [p[1] for p in pairs]
 
-    auc = np.trapz(tpr_sorted, fpr_sorted)
+    auc = np.trapezoid(tpr_sorted, fpr_sorted)
     return auc
 
 
