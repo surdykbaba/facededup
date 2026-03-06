@@ -41,6 +41,10 @@ class LivenessCheckFailedError(FaceDeduplicationError):
     status_code = 422
     detail = "Image failed liveness/quality checks"
 
+    def __init__(self, detail: str | None = None, liveness_info: dict | None = None):
+        self.liveness_info = liveness_info
+        super().__init__(detail)
+
 
 class InsufficientFramesError(FaceDeduplicationError):
     status_code = 400
@@ -50,7 +54,41 @@ class InsufficientFramesError(FaceDeduplicationError):
 async def face_error_handler(
     request: Request, exc: FaceDeduplicationError
 ) -> JSONResponse:
+    content: dict = {"error": exc.__class__.__name__, "detail": exc.detail}
+
+    # Include full liveness breakdown so callers know exactly what failed
+    if isinstance(exc, LivenessCheckFailedError) and exc.liveness_info:
+        info = exc.liveness_info
+
+        # Build a concise per-check summary
+        failed_checks = []
+        passed_checks = []
+        checks = info.get("checks", {})
+        for name, check in checks.items():
+            entry = {
+                "name": name,
+                "passed": check["passed"],
+                "score": check["score"],
+                "detail": check["detail"],
+                "mandatory": check["mandatory"],
+            }
+            if check["passed"]:
+                passed_checks.append(entry)
+            else:
+                failed_checks.append(entry)
+
+        content["liveness"] = {
+            "is_live": info.get("is_live", False),
+            "liveness_score": info.get("liveness_score", 0),
+            "checks_passed": info.get("checks_passed", 0),
+            "checks_total": info.get("checks_total", 0),
+            "mandatory_passed": info.get("mandatory_checks_passed", 0),
+            "mandatory_total": info.get("mandatory_checks_total", 0),
+            "failed_checks": failed_checks,
+            "passed_checks": passed_checks,
+        }
+
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error": exc.__class__.__name__, "detail": exc.detail},
+        content=content,
     )

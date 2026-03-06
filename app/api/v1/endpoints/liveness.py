@@ -25,12 +25,14 @@ async def check_liveness(
 ) -> LivenessResponse:
     """Passive liveness detection with anti-spoof analysis.
 
-    Runs ML anti-spoof model (Silent-Face ensemble) plus heuristic checks:
-    - ML anti-spoof: CNN classifies face as Real or Fake
-    - 9 mandatory heuristic checks (all must pass)
-    - 4 optional heuristic checks (tolerance configurable)
+    Runs 15 liveness checks:
+    - 7 mandatory heuristic checks (all must pass)
+    - 8 optional checks with tolerance of 3 (ML anti-spoof, noise, color
+      correlation, sharpness, color distribution, face size, embedding
+      norm, gradient smoothness)
 
     Catches: cartoons, printed photo attacks, screen replay attacks.
+    Returns full check-by-check breakdown in the response.
     """
     image_bytes = await image.read()
     validate_image(image_bytes)

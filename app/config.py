@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     LIVENESS_ENROLL_REQUIRED: bool = True
     LIVENESS_MATCH_REQUIRED: bool = True
     LIVENESS_COMPARE_REQUIRED: bool = True
-    LIVENESS_OPTIONAL_TOLERANCE: int = 2  # how many optional checks can fail
+    LIVENESS_OPTIONAL_TOLERANCE: int = 3  # how many optional checks can fail
     LIVENESS_DET_SCORE_MIN: float = 0.85
     LIVENESS_SHARPNESS_MIN: float = 50.0
     LIVENESS_SHARPNESS_MAX: float = 2000.0
@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     LIVENESS_DCT_HIGH_FREQ_MIN: float = 0.02
     LIVENESS_EDGE_DENSITY_MIN: float = 0.03
     LIVENESS_EDGE_DENSITY_MAX: float = 0.40
+    LIVENESS_EDGE_UNIFORMITY_MAX: float = 0.15
     LIVENESS_NOISE_LEVEL_MIN: float = 0.8
     LIVENESS_COLOR_CORR_MIN: float = 0.50
 

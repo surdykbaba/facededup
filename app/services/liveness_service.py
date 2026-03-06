@@ -25,7 +25,6 @@ class LivenessService:
 
     Checks performed (up to 15 total):
     MANDATORY (all must pass):
-      0. ML Anti-Spoof model (Silent-Face ensemble, if loaded)
       1. Detection confidence
       2. Landmark geometric quality
       3. HSV skin tone validation
@@ -35,6 +34,7 @@ class LivenessService:
       7. Edge density + uniformity
 
     OPTIONAL (configurable tolerance, default allow 2 failures):
+      0. ML Anti-Spoof model (Silent-Face ensemble, if loaded)
       8. Camera noise pattern
       9. Color channel correlation
      10. Sharpness (Laplacian variance)
@@ -76,9 +76,22 @@ class LivenessService:
 
         s = self._settings
 
-        all_checks = []
+        all_checks = [
+            # Mandatory (7 heuristic checks — ALL must pass)
+            self._check_detection_confidence(face, s.LIVENESS_DET_SCORE_MIN),
+            self._check_landmark_quality(face, s.LIVENESS_LANDMARK_QUALITY_MIN),
+            self._check_skin_tone(face_crop, s),
+            self._check_frequency_domain(face_crop, s.LIVENESS_DCT_HIGH_FREQ_MIN),
+            self._check_glare(gray_face, s.LIVENESS_GLARE_RATIO_MAX),
+            self._check_texture(gray_face, s.LIVENESS_LBP_VARIANCE_MIN),
+            self._check_edge_density(
+                face_crop, s.LIVENESS_EDGE_DENSITY_MIN,
+                s.LIVENESS_EDGE_DENSITY_MAX, s.LIVENESS_EDGE_UNIFORMITY_MAX,
+            ),
+        ]
 
-        # ML Anti-Spoof check (primary mandatory gate)
+        # ML Anti-Spoof check (optional — model trained on limited data,
+        # can misclassify real selfies under certain cameras/lighting)
         if self.anti_spoof is not None and s.ANTISPOOF_ENABLED:
             all_checks.append(
                 self._check_anti_spoof_model(
@@ -87,15 +100,7 @@ class LivenessService:
             )
 
         all_checks += [
-            # Mandatory (7 heuristic checks — ALL must pass)
-            self._check_detection_confidence(face, s.LIVENESS_DET_SCORE_MIN),
-            self._check_landmark_quality(face, s.LIVENESS_LANDMARK_QUALITY_MIN),
-            self._check_skin_tone(face_crop, s),
-            self._check_frequency_domain(face_crop, s.LIVENESS_DCT_HIGH_FREQ_MIN),
-            self._check_glare(gray_face, s.LIVENESS_GLARE_RATIO_MAX),
-            self._check_texture(gray_face, s.LIVENESS_LBP_VARIANCE_MIN),
-            self._check_edge_density(face_crop, s.LIVENESS_EDGE_DENSITY_MIN, s.LIVENESS_EDGE_DENSITY_MAX),
-            # Optional (7 checks — tolerance configurable, default allow 2 failures)
+            # Optional (up to 7 checks — tolerance configurable, default allow 2 failures)
             self._check_noise_level(face_crop, s.LIVENESS_NOISE_LEVEL_MIN),
             self._check_color_correlation(face_crop, s.LIVENESS_COLOR_CORR_MIN),
             self._check_sharpness(gray_face, s.LIVENESS_SHARPNESS_MIN, s.LIVENESS_SHARPNESS_MAX),
@@ -164,6 +169,9 @@ class LivenessService:
         Two ONNX models (MiniFASNetV2 + MiniFASNetV1SE) classify the face
         as Real (index 1) or Fake (index 0/2). This catches printed photos,
         screen replays, and cartoons that heuristic checks may miss.
+
+        Optional because the model was trained on a limited dataset and
+        can misclassify real selfies under certain cameras/lighting.
         """
         try:
             bbox_xyxy = face.bbox.tolist()
@@ -180,7 +188,7 @@ class LivenessService:
                     f"(real_score={real_score:.6f}, min={min_real_score}, "
                     f"raw_idx={result['raw_label_idx']})"
                 ),
-                mandatory=True,
+                mandatory=False,
             )
         except Exception as e:
             logger.warning("Anti-spoof model error: %s", e)
@@ -189,7 +197,7 @@ class LivenessService:
                 passed=False,
                 score=0.0,
                 detail=f"ML anti-spoof model error: {e}",
-                mandatory=True,
+                mandatory=False,
             )
 
     # ------------------------------------------------------------------
@@ -413,6 +421,7 @@ class LivenessService:
     @staticmethod
     def _check_edge_density(
         face_crop: np.ndarray, min_density: float, max_density: float,
+        max_uniformity_std: float = 0.15,
     ) -> CheckResult:
         """Edge density and distribution analysis.
 
@@ -443,7 +452,7 @@ class LivenessService:
             edge_uniformity_std = float(np.std(grid_densities))
 
         density_ok = min_density <= edge_density <= max_density
-        not_cartoon_edges = edge_uniformity_std < 0.12  # tighter threshold
+        not_cartoon_edges = edge_uniformity_std < max_uniformity_std
         passed = density_ok and not_cartoon_edges
 
         return CheckResult(
@@ -452,7 +461,7 @@ class LivenessService:
             score=round(edge_density, 4),
             detail=(
                 f"Edge density: {edge_density:.4f} (range: {min_density}-{max_density}), "
-                f"uniformity_std: {edge_uniformity_std:.4f} (max: 0.12)"
+                f"uniformity_std: {edge_uniformity_std:.4f} (max: {max_uniformity_std})"
             ),
             mandatory=True,
         )

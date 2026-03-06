@@ -75,7 +75,8 @@ async def compare_faces(
             raise LivenessCheckFailedError(
                 f"Image A failed liveness check "
                 f"(score: {result_a['liveness_score']:.2f}, "
-                f"passed {result_a['checks_passed']}/{result_a['checks_total']})"
+                f"passed {result_a['checks_passed']}/{result_a['checks_total']})",
+                liveness_info=result_a,
             )
 
         result_b = liveness_svc.check_liveness_from_face(img_b, face_b, crop_b)
@@ -83,7 +84,8 @@ async def compare_faces(
             raise LivenessCheckFailedError(
                 f"Image B failed liveness check "
                 f"(score: {result_b['liveness_score']:.2f}, "
-                f"passed {result_b['checks_passed']}/{result_b['checks_total']})"
+                f"passed {result_b['checks_passed']}/{result_b['checks_total']})",
+                liveness_info=result_b,
             )
 
     # Extract embeddings and compute similarity

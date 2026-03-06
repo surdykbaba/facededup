@@ -72,7 +72,8 @@ async def match_face(
             raise LivenessCheckFailedError(
                 f"Query image failed liveness check "
                 f"(score: {liveness_info['liveness_score']:.2f}, "
-                f"passed {liveness_info['checks_passed']}/{liveness_info['checks_total']})"
+                f"passed {liveness_info['checks_passed']}/{liveness_info['checks_total']})",
+                liveness_info=liveness_info,
             )
 
     embedding = face.normed_embedding

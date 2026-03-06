@@ -91,7 +91,8 @@ async def enroll_face(
                 f"Multi-frame liveness failed "
                 f"(score: {liveness_info['liveness_score']:.2f}, "
                 f"active checks: {liveness_info['active_checks']['checks_passed']}/"
-                f"{liveness_info['active_checks']['checks_total']})"
+                f"{liveness_info['active_checks']['checks_total']})",
+                liveness_info=liveness_info,
             )
 
         # Get first frame's face data for embedding
@@ -111,7 +112,8 @@ async def enroll_face(
                 raise LivenessCheckFailedError(
                     f"Image failed liveness check "
                     f"(score: {liveness_info['liveness_score']:.2f}, "
-                    f"passed {liveness_info['checks_passed']}/{liveness_info['checks_total']})"
+                    f"passed {liveness_info['checks_passed']}/{liveness_info['checks_total']})",
+                    liveness_info=liveness_info,
                 )
 
     embedding = face.normed_embedding
