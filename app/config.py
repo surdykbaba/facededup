@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     LIVENESS_NOISE_LEVEL_MIN: float = 1.5
     LIVENESS_COLOR_CORR_MIN: float = 0.70
 
+    # ML Anti-Spoofing (Silent-Face-Anti-Spoofing)
+    ANTISPOOF_ENABLED: bool = True
+    ANTISPOOF_REAL_SCORE_MIN: float = 0.80
+
     # Multi-frame liveness detection
     MULTIFRAME_LIVENESS_ENABLED: bool = True
     MULTIFRAME_MIN_FRAMES: int = 3

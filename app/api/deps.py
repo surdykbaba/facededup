@@ -22,3 +22,8 @@ def get_face_analyzer(request: Request) -> FaceAnalysis:
 
 async def get_redis(request: Request) -> Redis:
     return request.app.state.redis
+
+
+def get_anti_spoof(request: Request):
+    """Return anti-spoof service or None if models not loaded."""
+    return getattr(request.app.state, "anti_spoof", None)

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from insightface.app import FaceAnalysis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_face_analyzer
+from app.api.deps import get_anti_spoof, get_db, get_face_analyzer
 from app.config import get_settings
 from app.core.exceptions import LivenessCheckFailedError
 from app.core.rate_limiter import rate_limit_dependency
@@ -36,6 +36,7 @@ async def match_face(
     ),
     db: AsyncSession = Depends(get_db),
     face_analyzer: FaceAnalysis = Depends(get_face_analyzer),
+    anti_spoof=Depends(get_anti_spoof),
     _api_key: str = Depends(verify_api_key),
     _rate_limit: None = Depends(rate_limit_dependency),
 ) -> MatchResponse:
@@ -64,7 +65,7 @@ async def match_face(
     # Liveness gate — reject cartoons and non-real faces
     liveness_info = None
     if settings.LIVENESS_MATCH_REQUIRED and not skip_liveness:
-        liveness_svc = LivenessService(face_analyzer)
+        liveness_svc = LivenessService(face_analyzer, anti_spoof=anti_spoof)
         liveness_info = liveness_svc.check_liveness_from_face(img, face, face_crop)
 
         if not liveness_info["is_live"]:

@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Depends, File, UploadFile
 from insightface.app import FaceAnalysis
 
-from app.api.deps import get_face_analyzer
+from app.api.deps import get_anti_spoof, get_face_analyzer
 from app.config import get_settings
 from app.core.exceptions import InsufficientFramesError
 from app.core.rate_limiter import rate_limit_dependency
@@ -23,6 +23,7 @@ async def check_multi_frame_liveness(
         ..., description="3-5 sequential face images for active liveness detection"
     ),
     face_analyzer: FaceAnalysis = Depends(get_face_analyzer),
+    anti_spoof=Depends(get_anti_spoof),
     _api_key: str = Depends(verify_api_key),
     _rate_limit: None = Depends(rate_limit_dependency),
 ) -> MultiFrameLivenessResponse:
@@ -61,7 +62,7 @@ async def check_multi_frame_liveness(
             f"Maximum {settings.MULTIFRAME_MAX_FRAMES} frames, got {len(frames_bytes)}"
         )
 
-    svc = MultiFrameLivenessService(face_analyzer)
+    svc = MultiFrameLivenessService(face_analyzer, anti_spoof=anti_spoof)
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(
         None, svc.check_multi_frame_liveness, frames_bytes

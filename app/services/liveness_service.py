@@ -23,8 +23,9 @@ class CheckResult(NamedTuple):
 class LivenessService:
     """Strict passive liveness detection with anti-spoof checks.
 
-    Checks performed (13 total):
+    Checks performed (up to 14 total):
     MANDATORY (all must pass):
+      0. ML Anti-Spoof model (Silent-Face ensemble, if loaded)
       1. Detection confidence (min 0.90)
       2. Landmark geometric quality (min 0.75)
       3. HSV skin tone validation (min 20% + saturation std >= 12)
@@ -42,8 +43,9 @@ class LivenessService:
      13. Embedding norm / quality
     """
 
-    def __init__(self, analyzer: FaceAnalysis):
+    def __init__(self, analyzer: FaceAnalysis, anti_spoof=None):
         self.analyzer = analyzer
+        self.anti_spoof = anti_spoof
         self._settings = get_settings()
 
     # ------------------------------------------------------------------
@@ -73,8 +75,18 @@ class LivenessService:
 
         s = self._settings
 
-        all_checks = [
-            # Mandatory (9 checks — ALL must pass)
+        all_checks = []
+
+        # ML Anti-Spoof check (primary mandatory gate)
+        if self.anti_spoof is not None and s.ANTISPOOF_ENABLED:
+            all_checks.append(
+                self._check_anti_spoof_model(
+                    self.anti_spoof, img, face, s.ANTISPOOF_REAL_SCORE_MIN
+                )
+            )
+
+        all_checks += [
+            # Mandatory (9 heuristic checks — ALL must pass)
             self._check_detection_confidence(face, s.LIVENESS_DET_SCORE_MIN),
             self._check_landmark_quality(face, s.LIVENESS_LANDMARK_QUALITY_MIN),
             self._check_skin_tone(face_crop, s),
@@ -138,7 +150,48 @@ class LivenessService:
         }
 
     # ------------------------------------------------------------------
-    # Mandatory checks (9)
+    # ML Anti-Spoof check (primary gate)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _check_anti_spoof_model(
+        anti_spoof, img: np.ndarray, face, min_real_score: float,
+    ) -> CheckResult:
+        """Silent-Face-Anti-Spoofing CNN ensemble.
+
+        Two ONNX models (MiniFASNetV2 + MiniFASNetV1SE) classify the face
+        as Real (index 1) or Fake (index 0/2). This catches printed photos,
+        screen replays, and cartoons that heuristic checks may miss.
+        """
+        try:
+            bbox_xyxy = face.bbox.tolist()
+            result = anti_spoof.predict(img, bbox_xyxy)
+            real_score = result["real_score"]
+            passed = result["is_real"] and real_score >= min_real_score
+
+            return CheckResult(
+                name="anti_spoof_model",
+                passed=passed,
+                score=round(real_score, 6),
+                detail=(
+                    f"ML anti-spoof: {result['label']} "
+                    f"(real_score={real_score:.6f}, min={min_real_score}, "
+                    f"raw_idx={result['raw_label_idx']})"
+                ),
+                mandatory=True,
+            )
+        except Exception as e:
+            logger.warning("Anti-spoof model error: %s", e)
+            return CheckResult(
+                name="anti_spoof_model",
+                passed=False,
+                score=0.0,
+                detail=f"ML anti-spoof model error: {e}",
+                mandatory=True,
+            )
+
+    # ------------------------------------------------------------------
+    # Mandatory heuristic checks (9)
     # ------------------------------------------------------------------
 
     @staticmethod

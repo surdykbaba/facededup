@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile
 from insightface.app import FaceAnalysis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_face_analyzer
+from app.api.deps import get_anti_spoof, get_face_analyzer
 from app.config import get_settings
 from app.core.exceptions import LivenessCheckFailedError
 from app.core.rate_limiter import rate_limit_dependency
@@ -35,6 +35,7 @@ async def compare_faces(
         description="Skip liveness check (admin override)",
     ),
     face_analyzer: FaceAnalysis = Depends(get_face_analyzer),
+    anti_spoof=Depends(get_anti_spoof),
     _api_key: str = Depends(verify_api_key),
     _rate_limit: None = Depends(rate_limit_dependency),
 ) -> CompareResponse:
@@ -67,7 +68,7 @@ async def compare_faces(
 
     # Liveness gate on both images — reject cartoons and non-real faces
     if settings.LIVENESS_COMPARE_REQUIRED and not skip_liveness:
-        liveness_svc = LivenessService(face_analyzer)
+        liveness_svc = LivenessService(face_analyzer, anti_spoof=anti_spoof)
 
         result_a = liveness_svc.check_liveness_from_face(img_a, face_a, crop_a)
         if not result_a["is_live"]:

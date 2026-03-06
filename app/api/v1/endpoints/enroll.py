@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from insightface.app import FaceAnalysis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_face_analyzer
+from app.api.deps import get_anti_spoof, get_db, get_face_analyzer
 from app.config import get_settings
 from app.core.exceptions import InsufficientFramesError, LivenessCheckFailedError
 from app.core.rate_limiter import rate_limit_dependency
@@ -36,6 +36,7 @@ async def enroll_face(
     skip_liveness: bool = Form(False, description="Skip liveness check (admin override)"),
     db: AsyncSession = Depends(get_db),
     face_analyzer: FaceAnalysis = Depends(get_face_analyzer),
+    anti_spoof=Depends(get_anti_spoof),
     _api_key: str = Depends(verify_api_key),
     _rate_limit: None = Depends(rate_limit_dependency),
 ) -> EnrollResponse:
@@ -79,7 +80,7 @@ async def enroll_face(
             validate_image(fb)
             all_frames_bytes.append(fb)
 
-        multi_svc = MultiFrameLivenessService(face_analyzer)
+        multi_svc = MultiFrameLivenessService(face_analyzer, anti_spoof=anti_spoof)
         liveness_info = await loop.run_in_executor(
             None, multi_svc.check_multi_frame_liveness, all_frames_bytes
         )
@@ -102,7 +103,7 @@ async def enroll_face(
         )
 
         if settings.LIVENESS_ENROLL_REQUIRED and not skip_liveness:
-            liveness_svc = LivenessService(face_analyzer)
+            liveness_svc = LivenessService(face_analyzer, anti_spoof=anti_spoof)
             liveness_info = liveness_svc.check_liveness_from_face(img, face, face_crop)
             liveness_mode = "single_frame"
 

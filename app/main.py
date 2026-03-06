@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.core.database import create_db_engine, create_session_factory
 from app.core.exceptions import FaceDeduplicationError, face_error_handler
 from app.core.logging import setup_logging
+from app.services.anti_spoof_service import AntiSpoofService
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,16 @@ async def lifespan(app: FastAPI):
     app.state.face_analyzer = face_analyzer
     app.state.gpu_enabled = "CUDAExecutionProvider" in providers
     logger.info("Face model loaded successfully (GPU: %s)", app.state.gpu_enabled)
+
+    # 1b. Load Silent-Face-Anti-Spoofing models
+    logger.info("Loading anti-spoofing models...")
+    try:
+        anti_spoof = AntiSpoofService(providers=providers)
+        app.state.anti_spoof = anti_spoof
+        logger.info("Anti-spoofing models loaded (2-model ensemble)")
+    except FileNotFoundError as e:
+        logger.warning("Anti-spoofing models not found: %s — running without ML anti-spoof", e)
+        app.state.anti_spoof = None
 
     # 2. Initialize async DB engine
     engine = create_db_engine()

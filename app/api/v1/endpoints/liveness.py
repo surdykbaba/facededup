@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Depends, File, UploadFile
 from insightface.app import FaceAnalysis
 
-from app.api.deps import get_face_analyzer
+from app.api.deps import get_anti_spoof, get_face_analyzer
 from app.core.rate_limiter import rate_limit_dependency
 from app.core.security import verify_api_key
 from app.schemas.liveness import LivenessResponse
@@ -19,23 +19,23 @@ logger = logging.getLogger(__name__)
 async def check_liveness(
     image: UploadFile = File(..., description="Face image to check for liveness"),
     face_analyzer: FaceAnalysis = Depends(get_face_analyzer),
+    anti_spoof=Depends(get_anti_spoof),
     _api_key: str = Depends(verify_api_key),
     _rate_limit: None = Depends(rate_limit_dependency),
 ) -> LivenessResponse:
     """Passive liveness detection with anti-spoof analysis.
 
-    Runs 11 checks in two tiers:
-    - 5 mandatory checks (all must pass): detection confidence, landmark quality,
-      skin tone validation, DCT frequency analysis, glare detection
-    - 6 optional checks (allow 1 failure): sharpness, texture, color distribution,
-      face size ratio, embedding quality, edge density
+    Runs ML anti-spoof model (Silent-Face ensemble) plus heuristic checks:
+    - ML anti-spoof: CNN classifies face as Real or Fake
+    - 9 mandatory heuristic checks (all must pass)
+    - 4 optional heuristic checks (tolerance configurable)
 
     Catches: cartoons, printed photo attacks, screen replay attacks.
     """
     image_bytes = await image.read()
     validate_image(image_bytes)
 
-    liveness_svc = LivenessService(face_analyzer)
+    liveness_svc = LivenessService(face_analyzer, anti_spoof=anti_spoof)
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(
         None, liveness_svc.check_liveness, image_bytes

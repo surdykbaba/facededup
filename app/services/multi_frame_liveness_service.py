@@ -37,10 +37,10 @@ class MultiFrameLivenessService:
     genuine inter-frame motion and will fail the active checks.
     """
 
-    def __init__(self, analyzer: FaceAnalysis):
+    def __init__(self, analyzer: FaceAnalysis, anti_spoof=None):
         self.analyzer = analyzer
         self._settings = get_settings()
-        self._liveness_svc = LivenessService(analyzer)
+        self._liveness_svc = LivenessService(analyzer, anti_spoof=anti_spoof)
         self._face_svc = FaceService(analyzer)
         self._primary_frame_data: tuple | None = None
 
