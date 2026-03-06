@@ -75,15 +75,24 @@ def load_weights(model, weights_path):
 
 
 def export(model, output_path, input_size=80, opset_version=11):
-    """Export PyTorch model to ONNX."""
+    """Export PyTorch model to ONNX with all weights embedded (single file).
+
+    Torch 2.10+ dynamo exporter may create external .data files. This function
+    always converts the result to a single self-contained ONNX file.
+    """
+    import onnx
+    from onnx.external_data_helper import convert_model_to_external_data
+
     model.eval()
 
     dummy_input = torch.randn(1, 3, input_size, input_size)
 
+    # Export to a temp path first (may create external .data file)
+    tmp_path = output_path + ".tmp"
     torch.onnx.export(
         model,
         dummy_input,
-        output_path,
+        tmp_path,
         export_params=True,
         opset_version=opset_version,
         do_constant_folding=True,
@@ -95,8 +104,25 @@ def export(model, output_path, input_size=80, opset_version=11):
         },
     )
 
+    # Load the ONNX model (with any external data) and re-save as single file
+    onnx_model = onnx.load(tmp_path, load_external_data=True)
+
+    # Strip any external data references so everything is embedded
+    for tensor in onnx_model.graph.initializer:
+        if tensor.HasField("data_location"):
+            tensor.ClearField("data_location")
+
+    onnx.save(onnx_model, output_path)
+
+    # Clean up temp files
+    if os.path.exists(tmp_path):
+        os.remove(tmp_path)
+    tmp_data = tmp_path + ".data"
+    if os.path.exists(tmp_data):
+        os.remove(tmp_data)
+
     file_size = os.path.getsize(output_path) / (1024 * 1024)
-    print(f"Exported ONNX model: {output_path} ({file_size:.2f} MB)")
+    print(f"Exported ONNX model (single file): {output_path} ({file_size:.2f} MB)")
 
 
 def verify_onnx(model, onnx_path, input_size=80):
