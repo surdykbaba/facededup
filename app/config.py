@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     LIVENESS_MATCH_REQUIRED: bool = True
     LIVENESS_COMPARE_REQUIRED: bool = True
     LIVENESS_OPTIONAL_TOLERANCE: int = 3  # how many optional checks can fail
-    LIVENESS_DET_SCORE_MIN: float = 0.85
+    LIVENESS_DET_SCORE_MIN: float = 0.80
     LIVENESS_SHARPNESS_MIN: float = 50.0
     LIVENESS_SHARPNESS_MAX: float = 2000.0
     LIVENESS_LBP_VARIANCE_MIN: float = 300.0
