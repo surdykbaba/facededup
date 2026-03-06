@@ -91,6 +91,9 @@ class Settings(BaseSettings):
     MULTIFRAME_BBOX_SHIFT_STD_MIN: float = 0.003
     MULTIFRAME_BBOX_SHIFT_MAX: float = 0.15
 
+    # Duplicate detection at enrollment
+    ENROLL_DEDUP_ENABLED: bool = True
+
     # Storage
     IMAGE_STORAGE_PATH: str = "/data/images"
     MAX_IMAGE_SIZE_MB: int = 10

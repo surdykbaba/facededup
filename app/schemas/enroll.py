@@ -11,6 +11,7 @@ class EnrollResponse(BaseModel):
     face_info: dict
     liveness_info: dict | None = None
     liveness_mode: str | None = None
+    duplicate_info: dict | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

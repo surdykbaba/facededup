@@ -17,6 +17,7 @@ from app.schemas.enroll import EnrollResponse
 from app.services.face_service import FaceService
 from app.services.image_service import save_image, validate_image
 from app.services.liveness_service import LivenessService
+from app.services.match_service import MatchService
 from app.services.multi_frame_liveness_service import MultiFrameLivenessService
 
 router = APIRouter()
@@ -119,6 +120,22 @@ async def enroll_face(
     embedding = face.normed_embedding
     face_info = FaceService.extract_face_info(face)
 
+    # Duplicate detection
+    duplicate_info = None
+    if settings.ENROLL_DEDUP_ENABLED:
+        match_svc = MatchService()
+        matches = await match_svc.find_matches(
+            session=db,
+            query_embedding=embedding,
+            threshold=settings.SIMILARITY_THRESHOLD,
+            limit=5,
+        )
+        if matches:
+            duplicate_info = {
+                "is_duplicate": True,
+                "matches": matches,
+            }
+
     record_id = uuid.uuid4()
 
     # Save image to disk
@@ -153,5 +170,6 @@ async def enroll_face(
         face_info=face_info,
         liveness_info=liveness_info,
         liveness_mode=liveness_mode,
+        duplicate_info=duplicate_info,
         created_at=record.created_at,
     )
