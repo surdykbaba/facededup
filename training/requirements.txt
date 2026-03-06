@@ -1,0 +1,9 @@
+# Training dependencies for Silent-Face anti-spoof models
+torch>=2.0.0
+torchvision>=0.15.0
+tensorboard>=2.14.0
+onnxruntime>=1.19.0
+opencv-python-headless>=4.10.0
+numpy>=1.26.0,<2.0.0
+insightface>=0.7.3
+Pillow>=10.0.0
