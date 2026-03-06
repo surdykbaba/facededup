@@ -21,23 +21,25 @@ class CheckResult(NamedTuple):
 
 
 class LivenessService:
-    """Passive liveness detection with anti-spoof checks.
+    """Strict passive liveness detection with anti-spoof checks.
 
-    Checks performed (11 total):
+    Checks performed (13 total):
     MANDATORY (all must pass):
-      1. Detection confidence (min 0.85)
-      2. Landmark geometric quality
-      3. HSV skin tone validation
-      4. DCT frequency domain analysis
+      1. Detection confidence (min 0.90)
+      2. Landmark geometric quality (min 0.75)
+      3. HSV skin tone validation (min 20% + saturation std >= 12)
+      4. DCT frequency domain analysis (min 0.03)
       5. Glare/reflection detection
+      6. Texture / LBP variance (min 500)
+      7. Edge density + uniformity
+      8. Camera noise pattern (min 1.5)
+      9. Color channel correlation (min 0.70)
 
-    OPTIONAL (allow 1 failure):
-      6. Sharpness (Laplacian variance)
-      7. Texture (LBP variance)
-      8. Color distribution
-      9. Face size ratio
-     10. Embedding norm / quality
-     11. Edge density
+    OPTIONAL (configurable tolerance, default 0 failures):
+     10. Sharpness (Laplacian variance)
+     11. Color distribution
+     12. Face size ratio
+     13. Embedding norm / quality
     """
 
     def __init__(self, analyzer: FaceAnalysis):
@@ -72,19 +74,21 @@ class LivenessService:
         s = self._settings
 
         all_checks = [
-            # Mandatory
+            # Mandatory (9 checks — ALL must pass)
             self._check_detection_confidence(face, s.LIVENESS_DET_SCORE_MIN),
-            self._check_landmark_quality(face),
+            self._check_landmark_quality(face, s.LIVENESS_LANDMARK_QUALITY_MIN),
             self._check_skin_tone(face_crop, s),
             self._check_frequency_domain(face_crop, s.LIVENESS_DCT_HIGH_FREQ_MIN),
             self._check_glare(gray_face, s.LIVENESS_GLARE_RATIO_MAX),
-            # Optional
-            self._check_sharpness(gray_face, s.LIVENESS_SHARPNESS_MIN, s.LIVENESS_SHARPNESS_MAX),
             self._check_texture(gray_face, s.LIVENESS_LBP_VARIANCE_MIN),
+            self._check_edge_density(face_crop, s.LIVENESS_EDGE_DENSITY_MIN, s.LIVENESS_EDGE_DENSITY_MAX),
+            self._check_noise_level(face_crop, s.LIVENESS_NOISE_LEVEL_MIN),
+            self._check_color_correlation(face_crop, s.LIVENESS_COLOR_CORR_MIN),
+            # Optional (4 checks — tolerance configurable, default 0)
+            self._check_sharpness(gray_face, s.LIVENESS_SHARPNESS_MIN, s.LIVENESS_SHARPNESS_MAX),
             self._check_color_distribution(face_crop, s.LIVENESS_COLOR_STD_MIN),
             self._check_face_size_ratio(bbox, w, h, s.LIVENESS_FACE_SIZE_RATIO_MIN, s.LIVENESS_FACE_SIZE_RATIO_MAX),
             self._check_embedding_quality(face, s.LIVENESS_EMBEDDING_NORM_MIN, s.LIVENESS_EMBEDDING_NORM_MAX),
-            self._check_edge_density(face_crop, s.LIVENESS_EDGE_DENSITY_MIN, s.LIVENESS_EDGE_DENSITY_MAX),
         ]
 
         # Two-tier verdict
@@ -95,7 +99,8 @@ class LivenessService:
         optional_passed = sum(1 for c in optional if c.passed)
 
         all_mandatory_ok = mandatory_passed == len(mandatory)
-        optional_ok = optional_passed >= len(optional) - 1  # allow 1 failure
+        tolerance = s.LIVENESS_OPTIONAL_TOLERANCE
+        optional_ok = optional_passed >= len(optional) - tolerance
 
         is_live = all_mandatory_ok and optional_ok
 
@@ -133,7 +138,7 @@ class LivenessService:
         }
 
     # ------------------------------------------------------------------
-    # Mandatory checks
+    # Mandatory checks (9)
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -149,7 +154,7 @@ class LivenessService:
         )
 
     @staticmethod
-    def _check_landmark_quality(face) -> CheckResult:
+    def _check_landmark_quality(face, min_quality: float) -> CheckResult:
         """Evaluate facial landmark geometric consistency.
 
         InsightFace kps: 5 points (left_eye, right_eye, nose, left_mouth, right_mouth).
@@ -175,52 +180,64 @@ class LivenessService:
             )
 
         sub_scores = 0.0
-        sub_total = 4
+        sub_total = 5
 
-        # 1. Inter-eye distance ratio (typically 0.25-0.55 of face width)
+        # 1. Inter-eye distance ratio (typically 0.28-0.50 of face width)
         eye_dist = float(np.linalg.norm(left_eye - right_eye))
         eye_ratio = eye_dist / face_width
-        if 0.25 <= eye_ratio <= 0.55:
+        if 0.28 <= eye_ratio <= 0.50:
             sub_scores += 1.0
 
         # 2. Nose position: centered between eyes, below eye midpoint
         eye_mid = (left_eye + right_eye) / 2
         nose_x_offset = abs(nose[0] - eye_mid[0]) / face_width
         nose_below = (nose[1] - eye_mid[1]) / face_height
-        if nose_x_offset < 0.15 and 0.05 < nose_below < 0.40:
+        if nose_x_offset < 0.12 and 0.08 < nose_below < 0.35:
             sub_scores += 1.0
 
         # 3. Mouth position: below nose, roughly centered
         mouth_mid = (left_mouth + right_mouth) / 2
         mouth_below_nose = (mouth_mid[1] - nose[1]) / face_height
         mouth_centered = abs(mouth_mid[0] - nose[0]) / face_width
-        if 0.03 < mouth_below_nose < 0.35 and mouth_centered < 0.12:
+        if 0.05 < mouth_below_nose < 0.30 and mouth_centered < 0.10:
             sub_scores += 1.0
 
         # 4. Face symmetry: nose-to-eye distances should be similar
         dist_nose_left = float(np.linalg.norm(nose - left_eye))
         dist_nose_right = float(np.linalg.norm(nose - right_eye))
-        symmetry = min(dist_nose_left, dist_nose_right) / max(dist_nose_left, dist_nose_right) if max(dist_nose_left, dist_nose_right) > 0 else 0
-        if symmetry > 0.65:
+        max_nose = max(dist_nose_left, dist_nose_right)
+        symmetry = min(dist_nose_left, dist_nose_right) / max_nose if max_nose > 0 else 0
+        if symmetry > 0.70:
             sub_scores += 1.0
 
+        # 5. Mouth width vs eye distance (mouth typically 0.8-1.5x eye distance)
+        mouth_width = float(np.linalg.norm(left_mouth - right_mouth))
+        if eye_dist > 0:
+            mouth_eye_ratio = mouth_width / eye_dist
+            if 0.7 <= mouth_eye_ratio <= 1.6:
+                sub_scores += 1.0
+
         score = sub_scores / sub_total
-        passed = score >= 0.65
+        passed = score >= min_quality
 
         return CheckResult(
             name="landmark_quality",
             passed=passed,
             score=round(score, 4),
-            detail=f"Landmark quality: {score:.4f} (eye_ratio={eye_ratio:.3f}, symmetry={symmetry:.3f})",
+            detail=(
+                f"Landmark quality: {score:.4f} (min: {min_quality}) "
+                f"eye_ratio={eye_ratio:.3f}, symmetry={symmetry:.3f}, "
+                f"sub_scores={sub_scores}/{sub_total}"
+            ),
             mandatory=True,
         )
 
     @staticmethod
     def _check_skin_tone(face_crop: np.ndarray, settings) -> CheckResult:
-        """Validate that face contains realistic skin-toned pixels in HSV space.
+        """Validate realistic skin-toned pixels in HSV space.
 
         Human skin: H ~0-50 (and 160-180 for red wrap), S 15-200, V 50-255.
-        Cartoons often have flat fills or non-skin colors.
+        Cartoons have flat fills, non-skin colors, or uniform saturation.
         """
         hsv = cv2.cvtColor(face_crop, cv2.COLOR_BGR2HSV)
         h_ch, s_ch, _ = cv2.split(hsv)
@@ -238,13 +255,14 @@ class LivenessService:
         total_pixels = skin_mask.size
         skin_ratio = float(np.count_nonzero(skin_mask)) / total_pixels if total_pixels > 0 else 0
 
-        # Check saturation variance of skin pixels (flat cartoon fills have low std)
+        # Check saturation variance of skin pixels
+        skin_s_std = 0.0
         flat_fill = False
-        if skin_ratio > 0.10:
+        if skin_ratio > 0.05:
             skin_s = s_ch[skin_mask > 0]
             if len(skin_s) > 10:
                 skin_s_std = float(np.std(skin_s))
-                flat_fill = skin_s_std < 8.0
+                flat_fill = skin_s_std < settings.LIVENESS_SKIN_SAT_STD_MIN
             else:
                 flat_fill = True
 
@@ -254,7 +272,11 @@ class LivenessService:
             name="skin_tone",
             passed=passed,
             score=round(skin_ratio, 4),
-            detail=f"Skin pixel ratio: {skin_ratio:.4f} (min: {settings.LIVENESS_SKIN_PIXEL_RATIO_MIN}), flat_fill={flat_fill}",
+            detail=(
+                f"Skin ratio: {skin_ratio:.4f} (min: {settings.LIVENESS_SKIN_PIXEL_RATIO_MIN}), "
+                f"sat_std: {skin_s_std:.2f} (min: {settings.LIVENESS_SKIN_SAT_STD_MIN}), "
+                f"flat_fill={flat_fill}"
+            ),
             mandatory=True,
         )
 
@@ -263,7 +285,7 @@ class LivenessService:
         """DCT frequency analysis to detect print/screen recapture attacks.
 
         Real camera captures have natural high-frequency sensor noise.
-        Print/screen recaptures lose high-frequency content.
+        Print/screen recaptures and cartoons lose high-frequency content.
         """
         gray = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
         gray_resized = cv2.resize(gray, (128, 128))
@@ -307,26 +329,13 @@ class LivenessService:
             mandatory=True,
         )
 
-    # ------------------------------------------------------------------
-    # Optional checks
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _check_sharpness(gray_face: np.ndarray, min_val: float, max_val: float) -> CheckResult:
-        laplacian = cv2.Laplacian(gray_face, cv2.CV_64F)
-        sharpness = float(laplacian.var())
-        passed = min_val <= sharpness <= max_val
-        return CheckResult(
-            name="sharpness",
-            passed=passed,
-            score=round(sharpness, 2),
-            detail=f"Laplacian variance: {sharpness:.2f} (range: {min_val}-{max_val})",
-            mandatory=False,
-        )
-
     @staticmethod
     def _check_texture(gray_face: np.ndarray, min_variance: float) -> CheckResult:
-        """LBP variance — real faces have rich micro-texture."""
+        """LBP variance — real faces have rich micro-texture.
+
+        Cartoons have flat regions producing low LBP variance.
+        Now MANDATORY to catch cartoons.
+        """
         padded = cv2.copyMakeBorder(gray_face, 1, 1, 1, 1, cv2.BORDER_REFLECT)
         h, w = gray_face.shape
         lbp = np.zeros_like(gray_face, dtype=np.uint8)
@@ -343,6 +352,143 @@ class LivenessService:
             passed=passed,
             score=round(lbp_var, 2),
             detail=f"LBP variance: {lbp_var:.2f} (min: {min_variance})",
+            mandatory=True,
+        )
+
+    @staticmethod
+    def _check_edge_density(
+        face_crop: np.ndarray, min_density: float, max_density: float,
+    ) -> CheckResult:
+        """Edge density and distribution analysis.
+
+        Real faces: moderate, evenly distributed edges.
+        Cartoons: strong outlines with flat interiors (uneven distribution).
+        Now MANDATORY to catch cartoons.
+        """
+        gray = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
+
+        median_val = float(np.median(gray))
+        lower = int(max(0, 0.67 * median_val))
+        upper = int(min(255, 1.33 * median_val))
+        edges = cv2.Canny(gray, lower, upper)
+
+        edge_density = float(np.count_nonzero(edges)) / edges.size if edges.size > 0 else 0.0
+
+        # Check edge distribution uniformity via 4x4 grid
+        gh, gw = edges.shape[0] // 4, edges.shape[1] // 4
+        edge_uniformity_std = 0.0
+        if gh > 0 and gw > 0:
+            grid_densities = []
+            for i in range(4):
+                for j in range(4):
+                    cell = edges[i * gh:(i + 1) * gh, j * gw:(j + 1) * gw]
+                    grid_densities.append(
+                        float(np.count_nonzero(cell)) / cell.size if cell.size > 0 else 0.0
+                    )
+            edge_uniformity_std = float(np.std(grid_densities))
+
+        density_ok = min_density <= edge_density <= max_density
+        not_cartoon_edges = edge_uniformity_std < 0.12  # tighter threshold
+        passed = density_ok and not_cartoon_edges
+
+        return CheckResult(
+            name="edge_density",
+            passed=passed,
+            score=round(edge_density, 4),
+            detail=(
+                f"Edge density: {edge_density:.4f} (range: {min_density}-{max_density}), "
+                f"uniformity_std: {edge_uniformity_std:.4f} (max: 0.12)"
+            ),
+            mandatory=True,
+        )
+
+    @staticmethod
+    def _check_noise_level(face_crop: np.ndarray, min_noise: float) -> CheckResult:
+        """Camera noise pattern analysis.
+
+        Real camera images always contain sensor noise visible as small
+        differences between the original and a median-filtered version.
+        Cartoons and digital art have zero sensor noise.
+        """
+        gray = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
+        resized = cv2.resize(gray, (128, 128))
+
+        # Median filter removes noise but preserves edges
+        filtered = cv2.medianBlur(resized, 3)
+
+        # Noise = difference between original and filtered
+        diff = np.abs(resized.astype(np.float64) - filtered.astype(np.float64))
+        noise_level = float(np.mean(diff))
+
+        passed = noise_level >= min_noise
+
+        return CheckResult(
+            name="noise_pattern",
+            passed=passed,
+            score=round(noise_level, 4),
+            detail=f"Camera noise level: {noise_level:.4f} (min: {min_noise})",
+            mandatory=True,
+        )
+
+    @staticmethod
+    def _check_color_correlation(face_crop: np.ndarray, min_corr: float) -> CheckResult:
+        """Color channel correlation analysis.
+
+        In real photos under natural/artificial lighting, R, G, B channels
+        are highly correlated (skin tones, shadows follow physics).
+        Cartoons use independent flat color fills with low inter-channel
+        correlation.
+        """
+        if face_crop.shape[0] < 10 or face_crop.shape[1] < 10:
+            return CheckResult(
+                name="color_correlation", passed=False, score=0.0,
+                detail="Face crop too small", mandatory=True,
+            )
+
+        b, g, r = cv2.split(face_crop)
+        b_flat = b.flatten().astype(np.float64)
+        g_flat = g.flatten().astype(np.float64)
+        r_flat = r.flatten().astype(np.float64)
+
+        # Compute pairwise Pearson correlation
+        correlations = []
+        for ch_a, ch_b in [(r_flat, g_flat), (r_flat, b_flat), (g_flat, b_flat)]:
+            std_a = np.std(ch_a)
+            std_b = np.std(ch_b)
+            if std_a > 0 and std_b > 0:
+                corr = float(np.corrcoef(ch_a, ch_b)[0, 1])
+                correlations.append(corr)
+            else:
+                correlations.append(0.0)
+
+        avg_corr = float(np.mean(correlations)) if correlations else 0.0
+        passed = avg_corr >= min_corr
+
+        return CheckResult(
+            name="color_correlation",
+            passed=passed,
+            score=round(avg_corr, 4),
+            detail=(
+                f"Avg channel correlation: {avg_corr:.4f} (min: {min_corr}), "
+                f"R-G: {correlations[0]:.4f}, R-B: {correlations[1]:.4f}, G-B: {correlations[2]:.4f}"
+            ),
+            mandatory=True,
+        )
+
+    # ------------------------------------------------------------------
+    # Optional checks (4)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _check_sharpness(gray_face: np.ndarray, min_val: float, max_val: float) -> CheckResult:
+        laplacian = cv2.Laplacian(gray_face, cv2.CV_64F)
+        sharpness = float(laplacian.var())
+        passed = min_val <= sharpness <= max_val
+        return CheckResult(
+            name="sharpness",
+            passed=passed,
+            score=round(sharpness, 2),
+            detail=f"Laplacian variance: {sharpness:.2f} (range: {min_val}-{max_val})",
             mandatory=False,
         )
 
@@ -397,48 +543,5 @@ class LivenessService:
             passed=passed,
             score=round(norm, 2),
             detail=f"Embedding L2 norm: {norm:.2f} (range: {min_norm}-{max_norm})",
-            mandatory=False,
-        )
-
-    @staticmethod
-    def _check_edge_density(
-        face_crop: np.ndarray, min_density: float, max_density: float,
-    ) -> CheckResult:
-        """Edge density and distribution analysis.
-
-        Real faces: moderate, evenly distributed edges.
-        Cartoons: strong outlines with flat interiors (uneven distribution).
-        """
-        gray = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
-
-        median_val = float(np.median(gray))
-        lower = int(max(0, 0.67 * median_val))
-        upper = int(min(255, 1.33 * median_val))
-        edges = cv2.Canny(gray, lower, upper)
-
-        edge_density = float(np.count_nonzero(edges)) / edges.size if edges.size > 0 else 0.0
-
-        # Check edge distribution uniformity via 4x4 grid
-        gh, gw = edges.shape[0] // 4, edges.shape[1] // 4
-        edge_uniformity_std = 0.0
-        if gh > 0 and gw > 0:
-            grid_densities = []
-            for i in range(4):
-                for j in range(4):
-                    cell = edges[i * gh:(i + 1) * gh, j * gw:(j + 1) * gw]
-                    grid_densities.append(
-                        float(np.count_nonzero(cell)) / cell.size if cell.size > 0 else 0.0
-                    )
-            edge_uniformity_std = float(np.std(grid_densities))
-
-        density_ok = min_density <= edge_density <= max_density
-        not_cartoon_edges = edge_uniformity_std < 0.15
-        passed = density_ok and not_cartoon_edges
-
-        return CheckResult(
-            name="edge_density",
-            passed=passed,
-            score=round(edge_density, 4),
-            detail=f"Edge density: {edge_density:.4f} (range: {min_density}-{max_density}), uniformity_std: {edge_uniformity_std:.4f}",
             mandatory=False,
         )

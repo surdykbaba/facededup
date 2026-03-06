@@ -1,17 +1,19 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from insightface.app import FaceAnalysis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_face_analyzer
 from app.config import get_settings
+from app.core.exceptions import LivenessCheckFailedError
 from app.core.rate_limiter import rate_limit_dependency
 from app.core.security import verify_api_key
 from app.schemas.match import MatchResponse
 from app.services.face_service import FaceService
 from app.services.image_service import validate_image
+from app.services.liveness_service import LivenessService
 from app.services.match_service import MatchService
 
 router = APIRouter()
@@ -28,6 +30,10 @@ async def match_face(
         description="Minimum similarity threshold (0-1)",
     ),
     limit: int = Query(default=10, ge=1, le=100, description="Max results"),
+    skip_liveness: bool = Query(
+        default=False,
+        description="Skip liveness check (admin override)",
+    ),
     db: AsyncSession = Depends(get_db),
     face_analyzer: FaceAnalysis = Depends(get_face_analyzer),
     _api_key: str = Depends(verify_api_key),
@@ -35,19 +41,41 @@ async def match_face(
 ) -> MatchResponse:
     """Match a face image against enrolled records.
 
+    Runs liveness/anti-spoof checks on the query image before matching.
+    Rejects cartoons, printed photos, and non-face images.
+
     Returns ranked list of matching records with similarity scores.
     """
+    settings = get_settings()
     if threshold is None:
-        threshold = get_settings().SIMILARITY_THRESHOLD
+        threshold = settings.SIMILARITY_THRESHOLD
 
     image_bytes = await image.read()
     validate_image(image_bytes)
 
     face_svc = FaceService(face_analyzer)
     loop = asyncio.get_event_loop()
-    embedding, face_info = await loop.run_in_executor(
-        None, face_svc.detect_and_embed, image_bytes
+
+    # Single detection pass (shared between liveness + embedding)
+    img, face, face_crop = await loop.run_in_executor(
+        None, face_svc.detect_face, image_bytes
     )
+
+    # Liveness gate — reject cartoons and non-real faces
+    liveness_info = None
+    if settings.LIVENESS_MATCH_REQUIRED and not skip_liveness:
+        liveness_svc = LivenessService(face_analyzer)
+        liveness_info = liveness_svc.check_liveness_from_face(img, face, face_crop)
+
+        if not liveness_info["is_live"]:
+            raise LivenessCheckFailedError(
+                f"Query image failed liveness check "
+                f"(score: {liveness_info['liveness_score']:.2f}, "
+                f"passed {liveness_info['checks_passed']}/{liveness_info['checks_total']})"
+            )
+
+    embedding = face.normed_embedding
+    face_info = FaceService.extract_face_info(face)
 
     match_svc = MatchService()
     matches = await match_svc.find_matches(
