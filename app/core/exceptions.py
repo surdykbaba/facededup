@@ -42,6 +42,11 @@ class LivenessCheckFailedError(FaceDeduplicationError):
     detail = "Image failed liveness/quality checks"
 
 
+class InsufficientFramesError(FaceDeduplicationError):
+    status_code = 400
+    detail = "Multi-frame liveness requires 3-5 image frames"
+
+
 async def face_error_handler(
     request: Request, exc: FaceDeduplicationError
 ) -> JSONResponse:

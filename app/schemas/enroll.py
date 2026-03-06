@@ -10,6 +10,7 @@ class EnrollResponse(BaseModel):
     external_id: str | None
     face_info: dict
     liveness_info: dict | None = None
+    liveness_mode: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

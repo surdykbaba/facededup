@@ -766,6 +766,105 @@
 				}
 			],
 			"description": "Retrieve and manage individual face records."
+		},
+		{
+			"name": "Multi-Frame Liveness",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-API-Key",
+						"value": "{{api_key}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "frames",
+							"type": "file",
+							"src": "",
+							"description": "First face image (frame 1 of 3-5)"
+						},
+						{
+							"key": "frames",
+							"type": "file",
+							"src": "",
+							"description": "Second face image (frame 2 of 3-5)"
+						},
+						{
+							"key": "frames",
+							"type": "file",
+							"src": "",
+							"description": "Third face image (frame 3 of 3-5)"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/liveness/multi-frame",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"liveness",
+						"multi-frame"
+					]
+				},
+				"description": "Multi-frame active liveness detection. Submit 3-5 sequential face images to verify real facial movement between frames. Each frame runs 11 passive checks, then 5 inter-frame active checks analyze identity consistency, landmark displacement, head pose variation, optical flow, and bounding box shift. Static images (cartoons, printed photos, screen replays) fail because they cannot produce genuine inter-frame motion."
+			},
+			"response": [
+				{
+					"name": "Liveness Passed (Multi-Frame)",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "frames",
+									"type": "file",
+									"src": ""
+								},
+								{
+									"key": "frames",
+									"type": "file",
+									"src": ""
+								},
+								{
+									"key": "frames",
+									"type": "file",
+									"src": ""
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/liveness/multi-frame",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"liveness",
+								"multi-frame"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"body": "{\n  \"is_live\": true,\n  \"liveness_score\": 0.92,\n  \"mode\": \"multi_frame\",\n  \"frame_count\": 3,\n  \"passive_checks\": {\n    \"all_passed\": true,\n    \"per_frame\": [\n      {\n        \"frame_index\": 0,\n        \"is_live\": true,\n        \"liveness_score\": 0.91,\n        \"checks_passed\": 10,\n        \"checks_total\": 11\n      },\n      {\n        \"frame_index\": 1,\n        \"is_live\": true,\n        \"liveness_score\": 0.91,\n        \"checks_passed\": 10,\n        \"checks_total\": 11\n      },\n      {\n        \"frame_index\": 2,\n        \"is_live\": true,\n        \"liveness_score\": 1.0,\n        \"checks_passed\": 11,\n        \"checks_total\": 11\n      }\n    ]\n  },\n  \"active_checks\": {\n    \"checks_passed\": 5,\n    \"checks_total\": 5,\n    \"all_passed\": true,\n    \"checks\": {\n      \"identity_consistency\": {\n        \"score\": 0.92,\n        \"passed\": true,\n        \"detail\": \"Min pairwise similarity: 0.92\",\n        \"mandatory\": true\n      },\n      \"landmark_displacement\": {\n        \"score\": 0.015,\n        \"passed\": true,\n        \"detail\": \"Mean normalized displacement: 0.015\",\n        \"mandatory\": true\n      },\n      \"head_pose_variation\": {\n        \"score\": 5.2,\n        \"passed\": true,\n        \"detail\": \"Pose combined range: 5.2 degrees\",\n        \"mandatory\": true\n      },\n      \"optical_flow\": {\n        \"score\": 1.8,\n        \"passed\": true,\n        \"detail\": \"Avg flow magnitude: 1.8\",\n        \"mandatory\": true\n      },\n      \"bbox_shift\": {\n        \"score\": 0.012,\n        \"passed\": true,\n        \"detail\": \"Bbox center std: 0.012\",\n        \"mandatory\": true\n      }\n    }\n  },\n  \"face_info\": {\n    \"bbox\": [\n      100,\n      50,\n      300,\n      350\n    ],\n    \"det_score\": 0.99,\n    \"age\": 30,\n    \"gender\": \"M\"\n  }\n}"
+				}
+			]
 		}
 	]
 }
