@@ -21,26 +21,27 @@ class CheckResult(NamedTuple):
 
 
 class LivenessService:
-    """Strict passive liveness detection with anti-spoof checks.
+    """Liveness detection combining ML anti-spoof with heuristic checks.
 
-    Checks performed (up to 14 total):
+    Checks performed (up to 15 total):
     MANDATORY (all must pass):
       0. ML Anti-Spoof model (Silent-Face ensemble, if loaded)
-      1. Detection confidence (min 0.90)
-      2. Landmark geometric quality (min 0.75)
-      3. HSV skin tone validation (min 20% + saturation std >= 12)
-      4. DCT frequency domain analysis (min 0.03)
+      1. Detection confidence
+      2. Landmark geometric quality
+      3. HSV skin tone validation
+      4. DCT frequency domain analysis
       5. Glare/reflection detection
-      6. Texture / LBP variance (min 500)
+      6. Texture / LBP variance
       7. Edge density + uniformity
-      8. Camera noise pattern (min 1.5)
-      9. Color channel correlation (min 0.70)
 
-    OPTIONAL (configurable tolerance, default 0 failures):
+    OPTIONAL (configurable tolerance, default allow 2 failures):
+      8. Camera noise pattern
+      9. Color channel correlation
      10. Sharpness (Laplacian variance)
      11. Color distribution
      12. Face size ratio
      13. Embedding norm / quality
+     14. Gradient smoothness (AI image detection)
     """
 
     def __init__(self, analyzer: FaceAnalysis, anti_spoof=None):
@@ -86,7 +87,7 @@ class LivenessService:
             )
 
         all_checks += [
-            # Mandatory (9 heuristic checks — ALL must pass)
+            # Mandatory (7 heuristic checks — ALL must pass)
             self._check_detection_confidence(face, s.LIVENESS_DET_SCORE_MIN),
             self._check_landmark_quality(face, s.LIVENESS_LANDMARK_QUALITY_MIN),
             self._check_skin_tone(face_crop, s),
@@ -94,13 +95,14 @@ class LivenessService:
             self._check_glare(gray_face, s.LIVENESS_GLARE_RATIO_MAX),
             self._check_texture(gray_face, s.LIVENESS_LBP_VARIANCE_MIN),
             self._check_edge_density(face_crop, s.LIVENESS_EDGE_DENSITY_MIN, s.LIVENESS_EDGE_DENSITY_MAX),
+            # Optional (7 checks — tolerance configurable, default allow 2 failures)
             self._check_noise_level(face_crop, s.LIVENESS_NOISE_LEVEL_MIN),
             self._check_color_correlation(face_crop, s.LIVENESS_COLOR_CORR_MIN),
-            # Optional (4 checks — tolerance configurable, default 0)
             self._check_sharpness(gray_face, s.LIVENESS_SHARPNESS_MIN, s.LIVENESS_SHARPNESS_MAX),
             self._check_color_distribution(face_crop, s.LIVENESS_COLOR_STD_MIN),
             self._check_face_size_ratio(bbox, w, h, s.LIVENESS_FACE_SIZE_RATIO_MIN, s.LIVENESS_FACE_SIZE_RATIO_MAX),
             self._check_embedding_quality(face, s.LIVENESS_EMBEDDING_NORM_MIN, s.LIVENESS_EMBEDDING_NORM_MAX),
+            self._check_gradient_smoothness(face_crop),
         ]
 
         # Two-tier verdict
@@ -462,6 +464,7 @@ class LivenessService:
         Real camera images always contain sensor noise visible as small
         differences between the original and a median-filtered version.
         Cartoons and digital art have zero sensor noise.
+        JPEG compression can reduce noise in real photos, so this is optional.
         """
         gray = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
         resized = cv2.resize(gray, (128, 128))
@@ -480,7 +483,7 @@ class LivenessService:
             passed=passed,
             score=round(noise_level, 4),
             detail=f"Camera noise level: {noise_level:.4f} (min: {min_noise})",
-            mandatory=True,
+            mandatory=False,
         )
 
     @staticmethod
@@ -490,12 +493,13 @@ class LivenessService:
         In real photos under natural/artificial lighting, R, G, B channels
         are highly correlated (skin tones, shadows follow physics).
         Cartoons use independent flat color fills with low inter-channel
-        correlation.
+        correlation. Optional because diverse skin tones and lighting
+        conditions can produce lower correlation in real photos.
         """
         if face_crop.shape[0] < 10 or face_crop.shape[1] < 10:
             return CheckResult(
                 name="color_correlation", passed=False, score=0.0,
-                detail="Face crop too small", mandatory=True,
+                detail="Face crop too small", mandatory=False,
             )
 
         b, g, r = cv2.split(face_crop)
@@ -525,11 +529,11 @@ class LivenessService:
                 f"Avg channel correlation: {avg_corr:.4f} (min: {min_corr}), "
                 f"R-G: {correlations[0]:.4f}, R-B: {correlations[1]:.4f}, G-B: {correlations[2]:.4f}"
             ),
-            mandatory=True,
+            mandatory=False,
         )
 
     # ------------------------------------------------------------------
-    # Optional checks (4)
+    # Optional checks (7)
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -596,5 +600,54 @@ class LivenessService:
             passed=passed,
             score=round(norm, 2),
             detail=f"Embedding L2 norm: {norm:.2f} (range: {min_norm}-{max_norm})",
+            mandatory=False,
+        )
+
+    @staticmethod
+    def _check_gradient_smoothness(face_crop: np.ndarray) -> CheckResult:
+        """Detect AI-generated images via gradient analysis.
+
+        AI-generated faces (Midjourney, DALL-E, Stable Diffusion) produce
+        unnaturally smooth gradients in skin regions. Real camera photos
+        have micro-texture, sensor noise, and compression artifacts that
+        create higher gradient variance even in smooth-looking areas.
+
+        Measures the standard deviation of gradient magnitudes in the face
+        crop — real photos have higher variance, AI images are too clean.
+        """
+        gray = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
+        resized = cv2.resize(gray, (128, 128))
+
+        # Sobel gradients
+        grad_x = cv2.Sobel(resized, cv2.CV_64F, 1, 0, ksize=3)
+        grad_y = cv2.Sobel(resized, cv2.CV_64F, 0, 1, ksize=3)
+        magnitude = np.sqrt(grad_x ** 2 + grad_y ** 2)
+
+        # Gradient magnitude stats
+        grad_mean = float(np.mean(magnitude))
+        grad_std = float(np.std(magnitude))
+
+        # Coefficient of variation: std/mean — measures gradient irregularity
+        # Real photos: higher CoV (noisy, irregular gradients)
+        # AI images: lower CoV (smooth, uniform gradients)
+        cov = grad_std / max(grad_mean, 0.001)
+
+        # Also check: ratio of low-gradient pixels (< 5.0)
+        # AI images have more ultra-smooth patches
+        smooth_ratio = float(np.mean(magnitude < 5.0))
+
+        # Real photos: cov > 1.0 and smooth_ratio < 0.70
+        # AI images: cov ≈ 0.8-1.0 and smooth_ratio > 0.70
+        passed = cov >= 0.95 and smooth_ratio <= 0.75
+
+        return CheckResult(
+            name="gradient_smoothness",
+            passed=passed,
+            score=round(cov, 4),
+            detail=(
+                f"Gradient CoV: {cov:.4f} (min: 0.95), "
+                f"smooth_ratio: {smooth_ratio:.4f} (max: 0.75), "
+                f"grad_mean: {grad_mean:.2f}, grad_std: {grad_std:.2f}"
+            ),
             mandatory=False,
         )
