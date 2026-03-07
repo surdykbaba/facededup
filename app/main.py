@@ -1,12 +1,14 @@
 import base64
+import json
 import logging
 import secrets
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import redis.asyncio as aioredis
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from insightface.app import FaceAnalysis
 
 from app.api.v1.router import v1_router
@@ -139,6 +141,20 @@ def create_app() -> FastAPI:
                     content="Invalid password",
                 )
         return get_docs_html()
+
+    @app.get("/api/v1/postman", include_in_schema=False)
+    async def postman_collection():
+        """Serve the Postman collection JSON for download."""
+        collection_path = Path(__file__).parent.parent / "FaceDedup_API.postman_collection.json"
+        if not collection_path.exists():
+            return Response(status_code=404, content="Collection not found")
+        data = json.loads(collection_path.read_text())
+        return JSONResponse(
+            content=data,
+            headers={
+                "Content-Disposition": "attachment; filename=FaceDedup_API.postman_collection.json"
+            },
+        )
 
     return app
 

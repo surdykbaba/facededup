@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 		"name": "FaceDedup API",
-		"description": "FaceDedup is a facial recognition and deduplication API built on InsightFace with multi-layered anti-spoof protection.\n\nAnti-Spoof Pipeline:\n- 7 mandatory heuristic checks (detection confidence, landmark quality, skin tone, DCT frequency, glare, LBP texture, edge density)\n- 8 optional heuristic checks with tolerance of 3 (ML anti-spoof, noise pattern, color correlation, sharpness, color distribution, face size, embedding norm, gradient smoothness for AI detection)\n- Multi-frame active liveness (3-5 sequential images with 5 inter-frame motion checks)\n\nWhen liveness fails, the response includes a detailed breakdown of every check (failed_checks and passed_checks) so you can see exactly what failed and why.\n\nAuthentication is via the X-API-Key header on all endpoints except /health.\n\nBase URL: https://face.ninauth.com. All endpoints are prefixed with /api/v1.",
+		"description": "FaceDedup is a facial recognition and deduplication API built on InsightFace with multi-layered anti-spoof protection.\n\nAnti-Spoof Pipeline:\n- 9 mandatory heuristic checks (detection confidence, landmark quality, skin tone, DCT frequency, glare, LBP texture, edge density, lower face visibility / mask detection, eye visibility / sunglasses detection)\n- 8 optional heuristic checks with tolerance of 3 (ML anti-spoof, noise pattern, color correlation, sharpness, color distribution, face size, embedding norm, gradient smoothness for AI detection)\n- Multi-frame active liveness with duplicate frame detection (mandatory for enrollment)\n- 5 inter-frame motion checks (identity consistency, landmark displacement, head pose variation, optical flow, bounding box shift)\n- 2-tier duplicate frame detection (pHash perceptual hashing + embedding cosine similarity)\n\nWhen liveness fails, the response includes a detailed breakdown of every check (failed_checks and passed_checks) so you can see exactly what failed and why. Failed spoof images are automatically saved for future model retraining.\n\nAuthentication is via the X-API-Key header on all endpoints except /health.\n\nBase URL: https://face.ninauth.com. All endpoints are prefixed with /api/v1.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"auth": {
@@ -100,7 +100,314 @@
 			"name": "Enroll",
 			"item": [
 				{
-					"name": "Enroll Face (Single Frame)",
+					"name": "Enroll Face (Multi-Frame — Required)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"description": "Primary face image (JPEG/PNG/WebP)",
+									"type": "file",
+									"src": ""
+								},
+								{
+									"key": "frames",
+									"description": "Additional frame 1 — must show slight head movement or expression change",
+									"type": "file",
+									"src": ""
+								},
+								{
+									"key": "frames",
+									"description": "Additional frame 2 — must show slight head movement or expression change",
+									"type": "file",
+									"src": ""
+								},
+								{
+									"key": "name",
+									"value": "John Doe",
+									"description": "Person name",
+									"type": "text"
+								},
+								{
+									"key": "external_id",
+									"value": "EMP-2024-001",
+									"description": "External reference ID",
+									"type": "text"
+								},
+								{
+									"key": "metadata",
+									"value": "{\"department\": \"Engineering\", \"location\": \"Lagos\"}",
+									"description": "JSON metadata string",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/enroll",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"enroll"
+							]
+						},
+						"description": "Enroll a new face record with MANDATORY multi-frame active liveness.\n\nRequires the primary image + 2-4 additional frames (3-5 total images). Each frame must be a distinct capture showing slight head movement or expression change. Submitting the same image multiple times will be rejected by duplicate frame detection.\n\nPer-frame passive checks (17 per frame):\n- 9 mandatory: detection confidence, landmark quality, skin tone, DCT frequency, glare, LBP texture, edge density, lower face visibility (mask detection), eye visibility (sunglasses detection)\n- 8 optional with tolerance of 3: ML anti-spoof, noise pattern, color correlation, sharpness, color distribution, face size, embedding norm, gradient smoothness\n\nInter-frame active checks (5):\n1. Identity consistency (same person across all frames)\n2. Landmark displacement (facial features move between frames)\n3. Head pose variation (head angle changes naturally)\n4. Optical flow (pixel-level motion between frames)\n5. Bounding box shift (natural micro-sway)\n\nDuplicate frame detection (2-tier):\n- Tier 1: pHash perceptual hashing (before face detection) — catches identical/near-identical images\n- Tier 2: Embedding cosine similarity (after face detection) — catches subtle re-uploads\n\nAlso checks for duplicate enrollments against existing records.\n\nStatic images (cartoons, AI-generated, printed photos, screen replays) cannot produce genuine inter-frame motion and will be rejected."
+					},
+					"response": [
+						{
+							"name": "Enrolled with Multi-Frame Liveness",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "image",
+											"type": "file",
+											"src": ""
+										},
+										{
+											"key": "frames",
+											"type": "file",
+											"src": ""
+										},
+										{
+											"key": "frames",
+											"type": "file",
+											"src": ""
+										},
+										{
+											"key": "name",
+											"value": "John Doe",
+											"type": "text"
+										}
+									]
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/enroll",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"enroll"
+									]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"id\": \"d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8\",\n  \"name\": \"John Doe\",\n  \"external_id\": \"EMP-2024-001\",\n  \"face_info\": {\n    \"bbox\": [102, 85, 318, 370],\n    \"det_score\": 0.9987,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"liveness_info\": {\n    \"is_live\": true,\n    \"liveness_score\": 0.94,\n    \"mode\": \"multi_frame\",\n    \"frame_count\": 3,\n    \"passive_checks\": {\n      \"all_passed\": true,\n      \"per_frame\": [\n        {\"frame_index\": 0, \"is_live\": true, \"liveness_score\": 0.93, \"checks_passed\": 16, \"checks_total\": 17},\n        {\"frame_index\": 1, \"is_live\": true, \"liveness_score\": 0.93, \"checks_passed\": 16, \"checks_total\": 17},\n        {\"frame_index\": 2, \"is_live\": true, \"liveness_score\": 1.0, \"checks_passed\": 17, \"checks_total\": 17}\n      ]\n    },\n    \"active_checks\": {\n      \"checks_passed\": 5,\n      \"checks_total\": 5,\n      \"all_passed\": true\n    }\n  },\n  \"liveness_mode\": \"multi_frame\",\n  \"duplicate_info\": null,\n  \"created_at\": \"2026-03-07T10:23:45.123456\"\n}"
+						},
+						{
+							"name": "Duplicate Found at Enrollment",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "image",
+											"type": "file",
+											"src": ""
+										},
+										{
+											"key": "frames",
+											"type": "file",
+											"src": ""
+										},
+										{
+											"key": "frames",
+											"type": "file",
+											"src": ""
+										},
+										{
+											"key": "name",
+											"value": "John Doe",
+											"type": "text"
+										}
+									]
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/enroll",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"enroll"
+									]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"id\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\n  \"name\": \"John Doe\",\n  \"external_id\": \"EMP-2024-055\",\n  \"face_info\": {\n    \"bbox\": [100, 150, 300, 450],\n    \"det_score\": 0.9812,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"liveness_info\": {\n    \"is_live\": true,\n    \"liveness_score\": 0.91,\n    \"mode\": \"multi_frame\",\n    \"frame_count\": 3,\n    \"passive_checks\": {\n      \"all_passed\": true,\n      \"per_frame\": [\n        {\"frame_index\": 0, \"is_live\": true, \"liveness_score\": 0.91, \"checks_passed\": 15, \"checks_total\": 17},\n        {\"frame_index\": 1, \"is_live\": true, \"liveness_score\": 0.93, \"checks_passed\": 16, \"checks_total\": 17},\n        {\"frame_index\": 2, \"is_live\": true, \"liveness_score\": 0.93, \"checks_passed\": 16, \"checks_total\": 17}\n      ]\n    },\n    \"active_checks\": {\n      \"checks_passed\": 5,\n      \"checks_total\": 5,\n      \"all_passed\": true\n    }\n  },\n  \"liveness_mode\": \"multi_frame\",\n  \"duplicate_info\": {\n    \"is_duplicate\": true,\n    \"matches\": [\n      {\n        \"record_id\": \"d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8\",\n        \"name\": \"John Doe\",\n        \"external_id\": \"EMP-2024-001\",\n        \"similarity\": 0.9512,\n        \"metadata\": {\"department\": \"Engineering\", \"location\": \"Lagos\"}\n      }\n    ]\n  },\n  \"created_at\": \"2026-03-07T15:35:00.654321\"\n}"
+						},
+						{
+							"name": "Liveness Check Failed",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "image",
+											"type": "file",
+											"src": ""
+										},
+										{
+											"key": "frames",
+											"type": "file",
+											"src": ""
+										},
+										{
+											"key": "frames",
+											"type": "file",
+											"src": ""
+										}
+									]
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/enroll",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"enroll"
+									]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"error\": \"LivenessCheckFailedError\",\n  \"detail\": \"Multi-frame liveness failed (score: 0.47, active checks: 2/5)\",\n  \"liveness\": {\n    \"is_live\": false,\n    \"liveness_score\": 0.47,\n    \"mode\": \"multi_frame\",\n    \"frame_count\": 3,\n    \"passive_checks\": {\n      \"all_passed\": true,\n      \"per_frame\": [\n        {\"frame_index\": 0, \"is_live\": true, \"liveness_score\": 0.82, \"checks_passed\": 14, \"checks_total\": 17},\n        {\"frame_index\": 1, \"is_live\": true, \"liveness_score\": 0.82, \"checks_passed\": 14, \"checks_total\": 17},\n        {\"frame_index\": 2, \"is_live\": true, \"liveness_score\": 0.82, \"checks_passed\": 14, \"checks_total\": 17}\n      ]\n    },\n    \"active_checks\": {\n      \"checks_passed\": 2,\n      \"checks_total\": 5,\n      \"all_passed\": false,\n      \"checks\": {\n        \"identity_consistency\": {\n          \"score\": 0.95,\n          \"passed\": true,\n          \"detail\": \"Min pairwise similarity: 0.9500 (min: 0.65)\",\n          \"mandatory\": true\n        },\n        \"landmark_displacement\": {\n          \"score\": 0.001,\n          \"passed\": false,\n          \"detail\": \"Mean normalized landmark displacement: 0.001000 (range: 0.008-0.25)\",\n          \"mandatory\": true\n        },\n        \"head_pose_variation\": {\n          \"score\": 0.5,\n          \"passed\": false,\n          \"detail\": \"Pose ranges [pitch, yaw, roll]: [0.2, 0.2, 0.1], combined: 0.5000 (min single: 1.5, min combined: 3.0)\",\n          \"mandatory\": true\n        },\n        \"optical_flow\": {\n          \"score\": 0.1,\n          \"passed\": false,\n          \"detail\": \"Avg flow magnitude: 0.1000 (range: 0.3-15.0)\",\n          \"mandatory\": true\n        },\n        \"bbox_shift\": {\n          \"score\": 0.012,\n          \"passed\": true,\n          \"detail\": \"Bbox center std: 0.012000 (min: 0.003)\",\n          \"mandatory\": true\n        }\n      }\n    }\n  }\n}"
+						},
+						{
+							"name": "Duplicate Frames Detected",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "image",
+											"type": "file",
+											"src": ""
+										},
+										{
+											"key": "frames",
+											"type": "file",
+											"src": ""
+										},
+										{
+											"key": "frames",
+											"type": "file",
+											"src": ""
+										}
+									]
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/enroll",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"enroll"
+									]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"error\": \"DuplicateFramesError\",\n  \"detail\": \"Duplicate or near-duplicate frames detected: frames 0 and 1 are too similar (pHash distance: 2, threshold: 5). Each frame must be a distinct capture with natural movement.\"\n}"
+						},
+						{
+							"name": "Missing Frames Error",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "image",
+											"type": "file",
+											"src": ""
+										},
+										{
+											"key": "name",
+											"value": "John Doe",
+											"type": "text"
+										}
+									]
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/enroll",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"enroll"
+									]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"error\": \"InsufficientFramesError\",\n  \"detail\": \"Multi-frame liveness is required for enrollment. Provide 2 to 4 additional frames (total 3-5 including the primary image). Each frame must be a distinct capture showing slight head movement or expression change.\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Enroll Face (Skip Liveness — Admin Only)",
 					"request": {
 						"method": "POST",
 						"header": [],
@@ -133,195 +440,8 @@
 								},
 								{
 									"key": "skip_liveness",
-									"value": "false",
-									"description": "Skip liveness check (admin override). Default: false",
-									"type": "text",
-									"disabled": true
-								}
-							]
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/enroll",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"enroll"
-							]
-						},
-						"description": "Enroll a new face record with single-frame liveness validation.\n\nRuns 15 liveness checks:\n- 7 mandatory heuristic checks (detection confidence, landmark quality, skin tone, DCT frequency, glare, LBP texture, edge density)\n- 8 optional with tolerance of 3 (ML anti-spoof, noise pattern, color correlation, sharpness, color distribution, face size, embedding norm, gradient smoothness)\n\nRejects: cartoons, AI-generated faces, printed photos, screen replays.\nOn failure, response includes detailed check-by-check breakdown.\nUse skip_liveness=true to bypass for testing."
-					},
-					"response": [
-						{
-							"name": "Enrolled Successfully",
-							"originalRequest": {
-								"method": "POST",
-								"header": [],
-								"body": {
-									"mode": "formdata",
-									"formdata": [
-										{
-											"key": "image",
-											"type": "file",
-											"src": ""
-										},
-										{
-											"key": "name",
-											"value": "John Doe",
-											"type": "text"
-										}
-									]
-								},
-								"url": {
-									"raw": "{{base_url}}/api/v1/enroll",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"api",
-										"v1",
-										"enroll"
-									]
-								}
-							},
-							"status": "Created",
-							"code": 201,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json"
-								}
-							],
-							"body": "{\n  \"id\": \"d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8\",\n  \"name\": \"John Doe\",\n  \"external_id\": \"EMP-2024-001\",\n  \"face_info\": {\n    \"bbox\": [102, 85, 318, 370],\n    \"det_score\": 0.9987,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"liveness_info\": {\n    \"is_live\": true,\n    \"liveness_score\": 0.9333,\n    \"checks_passed\": 14,\n    \"checks_total\": 15,\n    \"mandatory_checks_passed\": 7,\n    \"mandatory_checks_total\": 7\n  },\n  \"liveness_mode\": \"single_frame\",\n  \"duplicate_info\": null,\n  \"created_at\": \"2026-03-05T10:23:45.123456\"\n}"
-						},
-						{
-							"name": "Duplicate Found at Enrollment",
-							"originalRequest": {
-								"method": "POST",
-								"header": [],
-								"body": {
-									"mode": "formdata",
-									"formdata": [
-										{
-											"key": "image",
-											"type": "file",
-											"src": ""
-										},
-										{
-											"key": "name",
-											"value": "John Doe",
-											"type": "text"
-										}
-									]
-								},
-								"url": {
-									"raw": "{{base_url}}/api/v1/enroll",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"api",
-										"v1",
-										"enroll"
-									]
-								}
-							},
-							"status": "Created",
-							"code": 201,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json"
-								}
-							],
-							"body": "{\n  \"id\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\n  \"name\": \"John Doe\",\n  \"external_id\": \"EMP-2024-055\",\n  \"face_info\": {\n    \"bbox\": [100, 150, 300, 450],\n    \"det_score\": 0.9812,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"liveness_info\": {\n    \"is_live\": true,\n    \"liveness_score\": 0.91,\n    \"checks_passed\": 12,\n    \"checks_total\": 15,\n    \"mandatory_checks_passed\": 7,\n    \"mandatory_checks_total\": 7\n  },\n  \"liveness_mode\": \"single_frame\",\n  \"duplicate_info\": {\n    \"is_duplicate\": true,\n    \"matches\": [\n      {\n        \"record_id\": \"d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8\",\n        \"name\": \"John Doe\",\n        \"external_id\": \"EMP-2024-001\",\n        \"similarity\": 0.9512,\n        \"metadata\": {\"department\": \"Engineering\", \"location\": \"Lagos\"}\n      }\n    ]\n  },\n  \"created_at\": \"2026-03-07T15:35:00.654321\"\n}"
-						},
-						{
-							"name": "Liveness Check Failed",
-							"originalRequest": {
-								"method": "POST",
-								"header": [],
-								"body": {
-									"mode": "formdata",
-									"formdata": [
-										{
-											"key": "image",
-											"type": "file",
-											"src": ""
-										}
-									]
-								},
-								"url": {
-									"raw": "{{base_url}}/api/v1/enroll",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"api",
-										"v1",
-										"enroll"
-									]
-								}
-							},
-							"status": "Bad Request",
-							"code": 400,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json"
-								}
-							],
-							"body": "{\n  \"error\": \"LivenessCheckFailedError\",\n  \"detail\": \"Image failed liveness check (score: 0.47, passed 7/15)\",\n  \"liveness\": {\n    \"is_live\": false,\n    \"liveness_score\": 0.47,\n    \"checks_passed\": 7,\n    \"checks_total\": 15,\n    \"mandatory_passed\": 5,\n    \"mandatory_total\": 7,\n    \"failed_checks\": [\n      {\n        \"name\": \"texture\",\n        \"passed\": false,\n        \"score\": 120.5,\n        \"detail\": \"LBP variance: 120.50 (min: 300.0)\",\n        \"mandatory\": true\n      },\n      {\n        \"name\": \"edge_density\",\n        \"passed\": false,\n        \"score\": 0.02,\n        \"detail\": \"Edge density: 0.0200 (range: 0.03-0.40), uniformity_std: 0.1800 (max: 0.15)\",\n        \"mandatory\": true\n      },\n      {\n        \"name\": \"anti_spoof_model\",\n        \"passed\": false,\n        \"score\": 0.32,\n        \"detail\": \"ML anti-spoof: Fake (real_score=0.320000, min=0.65, raw_idx=0)\",\n        \"mandatory\": false\n      },\n      {\n        \"name\": \"noise_pattern\",\n        \"passed\": false,\n        \"score\": 0.45,\n        \"detail\": \"Camera noise level: 0.4500 (min: 0.8)\",\n        \"mandatory\": false\n      },\n      {\n        \"name\": \"gradient_smoothness\",\n        \"passed\": false,\n        \"score\": 0.72,\n        \"detail\": \"Gradient CoV: 0.7200 (min: 0.95), smooth_ratio: 0.82 (max: 0.75)\",\n        \"mandatory\": false\n      }\n    ],\n    \"passed_checks\": [\n      {\n        \"name\": \"detection_confidence\",\n        \"passed\": true,\n        \"score\": 0.9987,\n        \"detail\": \"Detection score: 0.9987 (min: 0.85)\",\n        \"mandatory\": true\n      },\n      {\n        \"name\": \"landmark_quality\",\n        \"passed\": true,\n        \"score\": 0.8,\n        \"detail\": \"Landmark quality: 0.8000 (min: 0.65)\",\n        \"mandatory\": true\n      }\n    ]\n  }\n}"
-						}
-					]
-				},
-				{
-					"name": "Enroll Face (Multi-Frame Liveness)",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "formdata",
-							"formdata": [
-								{
-									"key": "image",
-									"description": "Primary face image (JPEG/PNG/WebP)",
-									"type": "file",
-									"src": ""
-								},
-								{
-									"key": "frames",
-									"description": "Additional frame 1 (different angle/pose)",
-									"type": "file",
-									"src": ""
-								},
-								{
-									"key": "frames",
-									"description": "Additional frame 2 (different angle/pose)",
-									"type": "file",
-									"src": ""
-								},
-								{
-									"key": "name",
-									"value": "Jane Smith",
-									"description": "Person name",
-									"type": "text"
-								},
-								{
-									"key": "external_id",
-									"value": "EMP-2024-015",
-									"description": "External reference ID",
-									"type": "text"
-								},
-								{
-									"key": "metadata",
-									"value": "{\"department\": \"Marketing\"}",
-									"description": "JSON metadata string",
+									"value": "true",
+									"description": "Skip liveness check — bypasses multi-frame requirement",
 									"type": "text"
 								}
 							]
@@ -337,11 +457,11 @@
 								"enroll"
 							]
 						},
-						"description": "Enroll with multi-frame active liveness. Provide the primary image + 2-4 additional frames (3-5 total). Runs per-frame passive checks + 5 inter-frame active checks (identity consistency, landmark displacement, head pose variation, optical flow, bounding box shift).\n\nStrongest anti-spoof protection — static images cannot produce genuine inter-frame motion."
+						"description": "Admin override: enroll a face record WITHOUT multi-frame liveness checks. Only use for testing or trusted batch imports.\n\nWhen skip_liveness=true, only the primary image is required (no additional frames needed). No liveness or anti-spoof checks are performed."
 					},
 					"response": [
 						{
-							"name": "Enrolled with Multi-Frame Liveness",
+							"name": "Enrolled (Liveness Skipped)",
 							"originalRequest": {
 								"method": "POST",
 								"header": [],
@@ -354,18 +474,13 @@
 											"src": ""
 										},
 										{
-											"key": "frames",
-											"type": "file",
-											"src": ""
-										},
-										{
-											"key": "frames",
-											"type": "file",
-											"src": ""
-										},
-										{
 											"key": "name",
-											"value": "Jane Smith",
+											"value": "John Doe",
+											"type": "text"
+										},
+										{
+											"key": "skip_liveness",
+											"value": "true",
 											"type": "text"
 										}
 									]
@@ -391,12 +506,12 @@
 									"value": "application/json"
 								}
 							],
-							"body": "{\n  \"id\": \"a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d\",\n  \"name\": \"Jane Smith\",\n  \"external_id\": \"EMP-2024-015\",\n  \"face_info\": {\n    \"bbox\": [95, 78, 310, 365],\n    \"det_score\": 0.9992,\n    \"age\": 28,\n    \"gender\": \"F\"\n  },\n  \"liveness_info\": {\n    \"is_live\": true,\n    \"liveness_score\": 0.94,\n    \"mode\": \"multi_frame\",\n    \"frame_count\": 3,\n    \"passive_checks\": {\n      \"all_passed\": true,\n      \"per_frame\": [\n        {\"frame_index\": 0, \"is_live\": true, \"liveness_score\": 0.93, \"checks_passed\": 14, \"checks_total\": 15},\n        {\"frame_index\": 1, \"is_live\": true, \"liveness_score\": 0.93, \"checks_passed\": 14, \"checks_total\": 15},\n        {\"frame_index\": 2, \"is_live\": true, \"liveness_score\": 1.0, \"checks_passed\": 15, \"checks_total\": 15}\n      ]\n    },\n    \"active_checks\": {\n      \"checks_passed\": 5,\n      \"checks_total\": 5,\n      \"all_passed\": true\n    }\n  },\n  \"liveness_mode\": \"multi_frame\",\n  \"created_at\": \"2026-03-05T10:25:12.456789\"\n}"
+							"body": "{\n  \"id\": \"a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d\",\n  \"name\": \"John Doe\",\n  \"external_id\": \"EMP-2024-001\",\n  \"face_info\": {\n    \"bbox\": [102, 85, 318, 370],\n    \"det_score\": 0.9987,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"liveness_info\": null,\n  \"liveness_mode\": null,\n  \"duplicate_info\": null,\n  \"created_at\": \"2026-03-07T10:23:45.123456\"\n}"
 						}
 					]
 				}
 			],
-			"description": "Enroll face records into the database. Supports single-frame and multi-frame liveness."
+			"description": "Enroll face records into the database.\n\nMulti-frame liveness is MANDATORY for enrollment. You must provide the primary image + 2-4 additional frames (3-5 total). Each frame must be a distinct capture — duplicate or near-duplicate frames are rejected.\n\nUse skip_liveness=true to bypass for testing/admin purposes only."
 		},
 		{
 			"name": "Match",
@@ -418,7 +533,7 @@
 							]
 						},
 						"url": {
-							"raw": "{{base_url}}/api/v1/match?threshold=0.6&limit=10",
+							"raw": "{{base_url}}/api/v1/match?limit=10",
 							"host": [
 								"{{base_url}}"
 							],
@@ -430,8 +545,9 @@
 							"query": [
 								{
 									"key": "threshold",
-									"value": "0.6",
-									"description": "Minimum similarity threshold (0-1). Uses server default if omitted."
+									"value": "0.4",
+									"description": "Minimum similarity threshold (0-1). Default: 0.4",
+									"disabled": true
 								},
 								{
 									"key": "limit",
@@ -446,7 +562,7 @@
 								}
 							]
 						},
-						"description": "Match a face image against all enrolled records. Runs ML anti-spoof + heuristic liveness checks on the query image before matching. Returns a ranked list of matching records with similarity scores.\n\nRejects cartoons, AI images, printed photos, and screen replays."
+						"description": "Match a face image against all enrolled records. Runs 17 liveness checks (9 mandatory + 8 optional) on the query image before matching. Returns a ranked list of matching records with similarity scores.\n\nRejects cartoons, AI images, printed photos, screen replays, masked faces, and sunglasses."
 					},
 					"response": [
 						{
@@ -465,7 +581,7 @@
 									]
 								},
 								"url": {
-									"raw": "{{base_url}}/api/v1/match?threshold=0.6&limit=10",
+									"raw": "{{base_url}}/api/v1/match?limit=10",
 									"host": [
 										"{{base_url}}"
 									],
@@ -475,10 +591,6 @@
 										"match"
 									],
 									"query": [
-										{
-											"key": "threshold",
-											"value": "0.6"
-										},
 										{
 											"key": "limit",
 											"value": "10"
@@ -495,12 +607,56 @@
 									"value": "application/json"
 								}
 							],
-							"body": "{\n  \"query_face_info\": {\n    \"bbox\": [95, 78, 310, 365],\n    \"det_score\": 0.9992,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"matches\": [\n    {\n      \"record_id\": \"d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8\",\n      \"name\": \"John Doe\",\n      \"external_id\": \"EMP-2024-001\",\n      \"similarity\": 0.9541,\n      \"metadata\": {\n        \"department\": \"Engineering\",\n        \"location\": \"Lagos\"\n      }\n    }\n  ],\n  \"threshold\": 0.6,\n  \"total_matches\": 1\n}"
+							"body": "{\n  \"query_face_info\": {\n    \"bbox\": [95, 78, 310, 365],\n    \"det_score\": 0.9992,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"matches\": [\n    {\n      \"record_id\": \"d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8\",\n      \"name\": \"John Doe\",\n      \"external_id\": \"EMP-2024-001\",\n      \"similarity\": 0.9541,\n      \"metadata\": {\n        \"department\": \"Engineering\",\n        \"location\": \"Lagos\"\n      }\n    }\n  ],\n  \"threshold\": 0.4,\n  \"total_matches\": 1\n}"
+						},
+						{
+							"name": "No Matches",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "image",
+											"type": "file",
+											"src": ""
+										}
+									]
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/match?limit=10",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"match"
+									],
+									"query": [
+										{
+											"key": "limit",
+											"value": "10"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"query_face_info\": {\n    \"bbox\": [95, 78, 310, 365],\n    \"det_score\": 0.9992,\n    \"age\": 25,\n    \"gender\": \"F\"\n  },\n  \"matches\": [],\n  \"threshold\": 0.4,\n  \"total_matches\": 0\n}"
 						}
 					]
 				}
 			],
-			"description": "Match faces against enrolled records with liveness gate."
+			"description": "Match faces against enrolled records with liveness gate. Uses cosine similarity with a default threshold of 0.4."
 		},
 		{
 			"name": "Compare",
@@ -528,7 +684,7 @@
 							]
 						},
 						"url": {
-							"raw": "{{base_url}}/api/v1/compare?threshold=0.6",
+							"raw": "{{base_url}}/api/v1/compare",
 							"host": [
 								"{{base_url}}"
 							],
@@ -540,8 +696,9 @@
 							"query": [
 								{
 									"key": "threshold",
-									"value": "0.6",
-									"description": "Similarity threshold to determine a match (0-1). Uses server default if omitted."
+									"value": "0.4",
+									"description": "Similarity threshold to determine a match (0-1). Default: 0.4",
+									"disabled": true
 								},
 								{
 									"key": "skip_liveness",
@@ -551,11 +708,11 @@
 								}
 							]
 						},
-						"description": "Compare two face images directly and return similarity score. Runs ML anti-spoof + liveness checks on BOTH images before comparing. No database lookup.\n\nRejects cartoons, AI images, printed photos, and screen replays."
+						"description": "Compare two face images directly and return similarity score. No database lookup — just a 1:1 face comparison.\n\nRuns 17 liveness checks (9 mandatory + 8 optional) on BOTH images before comparing. Rejects cartoons, AI images, printed photos, screen replays, masked faces, and sunglasses."
 					},
 					"response": [
 						{
-							"name": "Comparison Result - Match",
+							"name": "Comparison Result — Match",
 							"originalRequest": {
 								"method": "POST",
 								"header": [],
@@ -575,7 +732,7 @@
 									]
 								},
 								"url": {
-									"raw": "{{base_url}}/api/v1/compare?threshold=0.6",
+									"raw": "{{base_url}}/api/v1/compare",
 									"host": [
 										"{{base_url}}"
 									],
@@ -583,12 +740,6 @@
 										"api",
 										"v1",
 										"compare"
-									],
-									"query": [
-										{
-											"key": "threshold",
-											"value": "0.6"
-										}
 									]
 								}
 							},
@@ -601,12 +752,55 @@
 									"value": "application/json"
 								}
 							],
-							"body": "{\n  \"similarity\": 0.9541,\n  \"match\": true,\n  \"threshold\": 0.6,\n  \"face_a_info\": {\n    \"bbox\": [102, 85, 318, 370],\n    \"det_score\": 0.9987,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"face_b_info\": {\n    \"bbox\": [95, 78, 310, 365],\n    \"det_score\": 0.9992,\n    \"age\": 33,\n    \"gender\": \"M\"\n  }\n}"
+							"body": "{\n  \"similarity\": 0.9541,\n  \"match\": true,\n  \"threshold\": 0.4,\n  \"face_a_info\": {\n    \"bbox\": [102, 85, 318, 370],\n    \"det_score\": 0.9987,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"face_b_info\": {\n    \"bbox\": [95, 78, 310, 365],\n    \"det_score\": 0.9992,\n    \"age\": 33,\n    \"gender\": \"M\"\n  }\n}"
+						},
+						{
+							"name": "Comparison Result — No Match",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "image_a",
+											"type": "file",
+											"src": ""
+										},
+										{
+											"key": "image_b",
+											"type": "file",
+											"src": ""
+										}
+									]
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/compare",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"compare"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"similarity\": 0.1823,\n  \"match\": false,\n  \"threshold\": 0.4,\n  \"face_a_info\": {\n    \"bbox\": [102, 85, 318, 370],\n    \"det_score\": 0.9987,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"face_b_info\": {\n    \"bbox\": [80, 65, 290, 350],\n    \"det_score\": 0.9945,\n    \"age\": 28,\n    \"gender\": \"F\"\n  }\n}"
 						}
 					]
 				}
 			],
-			"description": "Compare two face images directly with liveness gates on both."
+			"description": "Compare two face images directly with liveness gates on both. No database involved."
 		},
 		{
 			"name": "Liveness",
@@ -638,7 +832,7 @@
 								"liveness"
 							]
 						},
-						"description": "Single-frame passive liveness detection with ML anti-spoof.\n\nChecks (up to 15 total):\nMANDATORY (7 - all must pass):\n  1. Detection confidence (min 0.85)\n  2. Landmark geometric quality (min 0.65)\n  3. Skin tone validation (HSV)\n  4. DCT frequency analysis (min 0.02)\n  5. Glare detection\n  6. LBP texture variance (min 300)\n  7. Edge density + uniformity\n\nOPTIONAL (8 - allow 3 failures):\n  0. ML Anti-Spoof (Silent-Face CNN ensemble)\n  8. Camera noise pattern\n  9. Color channel correlation\n  10. Sharpness\n  11. Color distribution\n  12. Face size ratio\n  13. Embedding norm\n  14. Gradient smoothness (AI detection)\n\nReturns full check-by-check breakdown in the response."
+						"description": "Single-frame passive liveness detection with ML anti-spoof.\n\nRuns 17 checks total:\n\nMANDATORY (9 — all must pass):\n  1. Detection confidence (min 0.80)\n  2. Landmark geometric quality (min 0.65)\n  3. Skin tone validation (HSV)\n  4. DCT frequency analysis (min 0.02)\n  5. Glare detection (max 0.05)\n  6. LBP texture variance (min 300)\n  7. Edge density + uniformity\n  8. Lower face visibility — mask detection (min skin ratio 0.25)\n  9. Eye visibility — sunglasses detection (gradient contrast, brightness, color uniformity)\n\nOPTIONAL (8 — allow 3 failures):\n  1. ML Anti-Spoof (Silent-Face CNN ensemble)\n  2. Camera noise pattern\n  3. Color channel correlation\n  4. Sharpness\n  5. Color distribution\n  6. Face size ratio\n  7. Embedding norm\n  8. Gradient smoothness (AI detection)\n\nReturns full check-by-check breakdown in the response."
 					},
 					"response": [
 						{
@@ -677,7 +871,7 @@
 									"value": "application/json"
 								}
 							],
-							"body": "{\n  \"is_live\": true,\n  \"liveness_score\": 0.9333,\n  \"checks_passed\": 14,\n  \"checks_total\": 15,\n  \"mandatory_checks_passed\": 7,\n  \"mandatory_checks_total\": 7,\n  \"checks\": {\n    \"detection_confidence\": {\n      \"score\": 0.9987,\n      \"passed\": true,\n      \"detail\": \"Detection score: 0.9987 (min: 0.85)\",\n      \"mandatory\": true\n    },\n    \"landmark_quality\": {\n      \"score\": 0.8,\n      \"passed\": true,\n      \"detail\": \"Landmark quality: 0.8000 (min: 0.65) eye_ratio=0.380, symmetry=0.920, sub_scores=4.0/5\",\n      \"mandatory\": true\n    },\n    \"skin_tone\": {\n      \"score\": 0.42,\n      \"passed\": true,\n      \"detail\": \"Skin ratio: 0.4200 (min: 0.15), sat_std: 18.50 (min: 5.0), flat_fill=false\",\n      \"mandatory\": true\n    },\n    \"frequency_analysis\": {\n      \"score\": 0.045,\n      \"passed\": true,\n      \"detail\": \"DCT high-freq ratio: 0.045000 (min: 0.02)\",\n      \"mandatory\": true\n    },\n    \"glare_detection\": {\n      \"score\": 0.012,\n      \"passed\": true,\n      \"detail\": \"Glare pixel ratio: 0.0120 (max: 0.05)\",\n      \"mandatory\": true\n    },\n    \"texture\": {\n      \"score\": 580.3,\n      \"passed\": true,\n      \"detail\": \"LBP variance: 580.30 (min: 300.0)\",\n      \"mandatory\": true\n    },\n    \"edge_density\": {\n      \"score\": 0.12,\n      \"passed\": true,\n      \"detail\": \"Edge density: 0.1200 (range: 0.03-0.40), uniformity_std: 0.0800 (max: 0.15)\",\n      \"mandatory\": true\n    },\n    \"anti_spoof_model\": {\n      \"score\": 0.9842,\n      \"passed\": true,\n      \"detail\": \"ML anti-spoof: Real (real_score=0.984200, min=0.65, raw_idx=1)\",\n      \"mandatory\": false\n    },\n    \"noise_pattern\": {\n      \"score\": 1.85,\n      \"passed\": true,\n      \"detail\": \"Camera noise level: 1.8500 (min: 0.8)\",\n      \"mandatory\": false\n    },\n    \"color_correlation\": {\n      \"score\": 0.82,\n      \"passed\": true,\n      \"detail\": \"Avg channel correlation: 0.8200 (min: 0.50)\",\n      \"mandatory\": false\n    },\n    \"sharpness\": {\n      \"score\": 245.5,\n      \"passed\": true,\n      \"detail\": \"Laplacian variance: 245.50 (range: 50.0-2000.0)\",\n      \"mandatory\": false\n    },\n    \"color_distribution\": {\n      \"score\": 35.2,\n      \"passed\": true,\n      \"detail\": \"Avg channel std: 35.20 (min: 20.0)\",\n      \"mandatory\": false\n    },\n    \"face_size_ratio\": {\n      \"score\": 0.32,\n      \"passed\": true,\n      \"detail\": \"Face/image ratio: 0.3200 (range: 0.03-0.85)\",\n      \"mandatory\": false\n    },\n    \"embedding_quality\": {\n      \"score\": 22.5,\n      \"passed\": true,\n      \"detail\": \"Embedding L2 norm: 22.50 (range: 15.0-35.0)\",\n      \"mandatory\": false\n    },\n    \"gradient_smoothness\": {\n      \"score\": 1.25,\n      \"passed\": true,\n      \"detail\": \"Gradient CoV: 1.2500 (min: 0.95), smooth_ratio: 0.4200 (max: 0.75), grad_mean: 28.50, grad_std: 35.62\",\n      \"mandatory\": false\n    }\n  },\n  \"face_info\": {\n    \"bbox\": [102, 85, 318, 370],\n    \"det_score\": 0.9987,\n    \"age\": 28,\n    \"gender\": \"F\"\n  }\n}"
+							"body": "{\n  \"is_live\": true,\n  \"liveness_score\": 0.9412,\n  \"checks_passed\": 16,\n  \"checks_total\": 17,\n  \"mandatory_checks_passed\": 9,\n  \"mandatory_checks_total\": 9,\n  \"checks\": {\n    \"detection_confidence\": {\n      \"score\": 0.9987,\n      \"passed\": true,\n      \"detail\": \"Detection score: 0.9987 (min: 0.80)\",\n      \"mandatory\": true\n    },\n    \"landmark_quality\": {\n      \"score\": 0.8,\n      \"passed\": true,\n      \"detail\": \"Landmark quality: 0.8000 (min: 0.65) eye_ratio=0.380, symmetry=0.920, sub_scores=4.0/5\",\n      \"mandatory\": true\n    },\n    \"skin_tone\": {\n      \"score\": 0.42,\n      \"passed\": true,\n      \"detail\": \"Skin ratio: 0.4200 (min: 0.15), sat_std: 18.50 (min: 5.0), flat_fill=false\",\n      \"mandatory\": true\n    },\n    \"frequency_analysis\": {\n      \"score\": 0.045,\n      \"passed\": true,\n      \"detail\": \"DCT high-freq ratio: 0.045000 (min: 0.02)\",\n      \"mandatory\": true\n    },\n    \"glare_detection\": {\n      \"score\": 0.012,\n      \"passed\": true,\n      \"detail\": \"Glare pixel ratio: 0.0120 (max: 0.05)\",\n      \"mandatory\": true\n    },\n    \"texture\": {\n      \"score\": 580.3,\n      \"passed\": true,\n      \"detail\": \"LBP variance: 580.30 (min: 300.0)\",\n      \"mandatory\": true\n    },\n    \"edge_density\": {\n      \"score\": 0.12,\n      \"passed\": true,\n      \"detail\": \"Edge density: 0.1200 (range: 0.03-0.40), uniformity_std: 0.0800 (max: 0.15)\",\n      \"mandatory\": true\n    },\n    \"lower_face_visibility\": {\n      \"score\": 0.45,\n      \"passed\": true,\n      \"detail\": \"Lower face skin ratio: 0.4500 (min: 0.25)\",\n      \"mandatory\": true\n    },\n    \"eye_visibility\": {\n      \"score\": 1.0,\n      \"passed\": true,\n      \"detail\": \"Eye contrast: 28.50, brightness_ratio: 0.78, color_std: 22.30 — all signals pass\",\n      \"mandatory\": true\n    },\n    \"anti_spoof_model\": {\n      \"score\": 0.9842,\n      \"passed\": true,\n      \"detail\": \"ML anti-spoof: Real (real_score=0.984200, min=0.53, raw_idx=1)\",\n      \"mandatory\": false\n    },\n    \"noise_pattern\": {\n      \"score\": 1.85,\n      \"passed\": true,\n      \"detail\": \"Camera noise level: 1.8500 (min: 0.8)\",\n      \"mandatory\": false\n    },\n    \"color_correlation\": {\n      \"score\": 0.82,\n      \"passed\": true,\n      \"detail\": \"Avg channel correlation: 0.8200 (min: 0.50)\",\n      \"mandatory\": false\n    },\n    \"sharpness\": {\n      \"score\": 245.5,\n      \"passed\": true,\n      \"detail\": \"Laplacian variance: 245.50 (range: 50.0-2000.0)\",\n      \"mandatory\": false\n    },\n    \"color_distribution\": {\n      \"score\": 35.2,\n      \"passed\": true,\n      \"detail\": \"Avg channel std: 35.20 (min: 20.0)\",\n      \"mandatory\": false\n    },\n    \"face_size_ratio\": {\n      \"score\": 0.32,\n      \"passed\": true,\n      \"detail\": \"Face/image ratio: 0.3200 (range: 0.03-0.85)\",\n      \"mandatory\": false\n    },\n    \"embedding_quality\": {\n      \"score\": 22.5,\n      \"passed\": true,\n      \"detail\": \"Embedding L2 norm: 22.50 (range: 15.0-35.0)\",\n      \"mandatory\": false\n    },\n    \"gradient_smoothness\": {\n      \"score\": 1.25,\n      \"passed\": false,\n      \"detail\": \"Gradient CoV: 1.2500 (min: 0.95), smooth_ratio: 0.4200 (max: 0.75), grad_mean: 28.50, grad_std: 35.62\",\n      \"mandatory\": false\n    }\n  },\n  \"face_info\": {\n    \"bbox\": [102, 85, 318, 370],\n    \"det_score\": 0.9987,\n    \"age\": 28,\n    \"gender\": \"F\"\n  }\n}"
 						},
 						{
 							"name": "Spoof Detected (Cartoon/AI)",
@@ -715,7 +909,7 @@
 									"value": "application/json"
 								}
 							],
-							"body": "{\n  \"is_live\": false,\n  \"liveness_score\": 0.3333,\n  \"checks_passed\": 5,\n  \"checks_total\": 15,\n  \"mandatory_checks_passed\": 5,\n  \"mandatory_checks_total\": 7,\n  \"checks\": {\n    \"texture\": {\n      \"score\": 120.5,\n      \"passed\": false,\n      \"detail\": \"LBP variance: 120.50 (min: 300.0)\",\n      \"mandatory\": true\n    },\n    \"edge_density\": {\n      \"score\": 0.01,\n      \"passed\": false,\n      \"detail\": \"Edge density: 0.0100 (range: 0.03-0.40), uniformity_std: 0.2200 (max: 0.15)\",\n      \"mandatory\": true\n    },\n    \"anti_spoof_model\": {\n      \"score\": 0.12,\n      \"passed\": false,\n      \"detail\": \"ML anti-spoof: Fake (real_score=0.120000, min=0.65, raw_idx=0)\",\n      \"mandatory\": false\n    },\n    \"gradient_smoothness\": {\n      \"score\": 0.72,\n      \"passed\": false,\n      \"detail\": \"Gradient CoV: 0.7200 (min: 0.95), smooth_ratio: 0.82 (max: 0.75)\",\n      \"mandatory\": false\n    },\n    \"noise_pattern\": {\n      \"score\": 0.2,\n      \"passed\": false,\n      \"detail\": \"Camera noise level: 0.2000 (min: 0.8)\",\n      \"mandatory\": false\n    }\n  },\n  \"face_info\": {\n    \"bbox\": [50, 30, 250, 280],\n    \"det_score\": 0.92,\n    \"age\": 25,\n    \"gender\": \"F\"\n  }\n}"
+							"body": "{\n  \"is_live\": false,\n  \"liveness_score\": 0.2941,\n  \"checks_passed\": 5,\n  \"checks_total\": 17,\n  \"mandatory_checks_passed\": 5,\n  \"mandatory_checks_total\": 9,\n  \"checks\": {\n    \"texture\": {\n      \"score\": 120.5,\n      \"passed\": false,\n      \"detail\": \"LBP variance: 120.50 (min: 300.0)\",\n      \"mandatory\": true\n    },\n    \"edge_density\": {\n      \"score\": 0.01,\n      \"passed\": false,\n      \"detail\": \"Edge density: 0.0100 (range: 0.03-0.40), uniformity_std: 0.2200 (max: 0.15)\",\n      \"mandatory\": true\n    },\n    \"lower_face_visibility\": {\n      \"score\": 0.08,\n      \"passed\": false,\n      \"detail\": \"Lower face skin ratio: 0.0800 (min: 0.25) — possible mask or occlusion\",\n      \"mandatory\": true\n    },\n    \"eye_visibility\": {\n      \"score\": 0.0,\n      \"passed\": false,\n      \"detail\": \"Eye contrast: 5.20, brightness_ratio: 0.35, color_std: 4.80 — possible sunglasses or occlusion\",\n      \"mandatory\": true\n    },\n    \"anti_spoof_model\": {\n      \"score\": 0.12,\n      \"passed\": false,\n      \"detail\": \"ML anti-spoof: Fake (real_score=0.120000, min=0.53, raw_idx=0)\",\n      \"mandatory\": false\n    },\n    \"gradient_smoothness\": {\n      \"score\": 0.72,\n      \"passed\": false,\n      \"detail\": \"Gradient CoV: 0.7200 (min: 0.95), smooth_ratio: 0.82 (max: 0.75)\",\n      \"mandatory\": false\n    },\n    \"noise_pattern\": {\n      \"score\": 0.2,\n      \"passed\": false,\n      \"detail\": \"Camera noise level: 0.2000 (min: 0.8)\",\n      \"mandatory\": false\n    }\n  },\n  \"face_info\": {\n    \"bbox\": [50, 30, 250, 280],\n    \"det_score\": 0.92,\n    \"age\": 25,\n    \"gender\": \"F\"\n  }\n}"
 						}
 					]
 				},
@@ -759,7 +953,7 @@
 								"multi-frame"
 							]
 						},
-						"description": "Multi-frame active liveness detection. Submit 3-5 sequential face images taken at slightly different angles.\n\nEach frame runs all passive liveness checks (ML anti-spoof + heuristics), then 5 inter-frame active checks:\n1. Identity consistency (same person across all frames)\n2. Landmark displacement (facial features move between frames)\n3. Head pose variation (head angle changes naturally)\n4. Optical flow (pixel-level motion between frames)\n5. Bounding box shift (natural micro-sway)\n\nA static image (cartoon, AI-generated, printed photo, screen replay) cannot produce genuine inter-frame motion and will be rejected."
+						"description": "Multi-frame active liveness detection. Submit 3-5 sequential face images taken at slightly different angles. Each frame must be a UNIQUE capture — duplicate frames are rejected.\n\nEach frame runs all 17 passive liveness checks (9 mandatory + 8 optional), then 5 inter-frame active checks:\n1. Identity consistency (same person across all frames)\n2. Landmark displacement (facial features move between frames)\n3. Head pose variation (head angle changes naturally)\n4. Optical flow (pixel-level motion between frames)\n5. Bounding box shift (natural micro-sway)\n\nDuplicate frame detection:\n- Tier 1: pHash perceptual hashing (Hamming distance <= 5 = duplicate)\n- Tier 2: Embedding cosine similarity (> 0.998 = duplicate)\n\nA static image (cartoon, AI-generated, printed photo, screen replay) cannot produce genuine inter-frame motion and will be rejected."
 					},
 					"response": [
 						{
@@ -809,23 +1003,83 @@
 									"value": "application/json"
 								}
 							],
-							"body": "{\n  \"is_live\": true,\n  \"liveness_score\": 0.94,\n  \"mode\": \"multi_frame\",\n  \"frame_count\": 3,\n  \"passive_checks\": {\n    \"all_passed\": true,\n    \"per_frame\": [\n      {\"frame_index\": 0, \"is_live\": true, \"liveness_score\": 0.93, \"checks_passed\": 14, \"checks_total\": 15},\n      {\"frame_index\": 1, \"is_live\": true, \"liveness_score\": 0.93, \"checks_passed\": 14, \"checks_total\": 15},\n      {\"frame_index\": 2, \"is_live\": true, \"liveness_score\": 1.0, \"checks_passed\": 15, \"checks_total\": 15}\n    ]\n  },\n  \"active_checks\": {\n    \"checks_passed\": 5,\n    \"checks_total\": 5,\n    \"all_passed\": true,\n    \"checks\": {\n      \"identity_consistency\": {\n        \"score\": 0.92,\n        \"passed\": true,\n        \"detail\": \"Min pairwise similarity: 0.9200 (min: 0.65), all pairs: [0.9500, 0.9200, 0.9350]\",\n        \"mandatory\": true\n      },\n      \"landmark_displacement\": {\n        \"score\": 0.015,\n        \"passed\": true,\n        \"detail\": \"Mean normalized landmark displacement: 0.015000 (range: 0.008-0.25)\",\n        \"mandatory\": true\n      },\n      \"head_pose_variation\": {\n        \"score\": 5.2,\n        \"passed\": true,\n        \"detail\": \"Pose ranges [pitch, yaw, roll]: [2.1, 3.5, 1.8], combined: 7.4000 (min single: 1.5, min combined: 3.0)\",\n        \"mandatory\": true\n      },\n      \"optical_flow\": {\n        \"score\": 1.8,\n        \"passed\": true,\n        \"detail\": \"Avg flow magnitude: 1.8000 (range: 0.3-15.0), avg direction std: 0.8500 (min: 0.3)\",\n        \"mandatory\": true\n      },\n      \"bbox_shift\": {\n        \"score\": 0.012,\n        \"passed\": true,\n        \"detail\": \"Bbox center std: 0.012000 (min: 0.003), max displacement: 0.035000 (max: 0.15)\",\n        \"mandatory\": true\n      }\n    }\n  },\n  \"face_info\": {\n    \"bbox\": [100, 50, 300, 350],\n    \"det_score\": 0.99,\n    \"age\": 30,\n    \"gender\": \"M\"\n  }\n}"
+							"body": "{\n  \"is_live\": true,\n  \"liveness_score\": 0.94,\n  \"mode\": \"multi_frame\",\n  \"frame_count\": 3,\n  \"passive_checks\": {\n    \"all_passed\": true,\n    \"per_frame\": [\n      {\"frame_index\": 0, \"is_live\": true, \"liveness_score\": 0.93, \"checks_passed\": 16, \"checks_total\": 17},\n      {\"frame_index\": 1, \"is_live\": true, \"liveness_score\": 0.93, \"checks_passed\": 16, \"checks_total\": 17},\n      {\"frame_index\": 2, \"is_live\": true, \"liveness_score\": 1.0, \"checks_passed\": 17, \"checks_total\": 17}\n    ]\n  },\n  \"active_checks\": {\n    \"checks_passed\": 5,\n    \"checks_total\": 5,\n    \"all_passed\": true,\n    \"checks\": {\n      \"identity_consistency\": {\n        \"score\": 0.92,\n        \"passed\": true,\n        \"detail\": \"Min pairwise similarity: 0.9200 (min: 0.65), all pairs: [0.9500, 0.9200, 0.9350]\",\n        \"mandatory\": true\n      },\n      \"landmark_displacement\": {\n        \"score\": 0.015,\n        \"passed\": true,\n        \"detail\": \"Mean normalized landmark displacement: 0.015000 (range: 0.008-0.25)\",\n        \"mandatory\": true\n      },\n      \"head_pose_variation\": {\n        \"score\": 5.2,\n        \"passed\": true,\n        \"detail\": \"Pose ranges [pitch, yaw, roll]: [2.1, 3.5, 1.8], combined: 7.4000 (min single: 1.5, min combined: 3.0)\",\n        \"mandatory\": true\n      },\n      \"optical_flow\": {\n        \"score\": 1.8,\n        \"passed\": true,\n        \"detail\": \"Avg flow magnitude: 1.8000 (range: 0.3-15.0), avg direction std: 0.8500 (min: 0.3)\",\n        \"mandatory\": true\n      },\n      \"bbox_shift\": {\n        \"score\": 0.012,\n        \"passed\": true,\n        \"detail\": \"Bbox center std: 0.012000 (min: 0.003), max displacement: 0.035000 (max: 0.15)\",\n        \"mandatory\": true\n      }\n    }\n  },\n  \"face_info\": {\n    \"bbox\": [100, 50, 300, 350],\n    \"det_score\": 0.99,\n    \"age\": 30,\n    \"gender\": \"M\"\n  }\n}"
+						},
+						{
+							"name": "Duplicate Frames Rejected",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "frames",
+											"type": "file",
+											"src": ""
+										},
+										{
+											"key": "frames",
+											"type": "file",
+											"src": ""
+										},
+										{
+											"key": "frames",
+											"type": "file",
+											"src": ""
+										}
+									]
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/liveness/multi-frame",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"liveness",
+										"multi-frame"
+									]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"error\": \"DuplicateFramesError\",\n  \"detail\": \"Duplicate or near-duplicate frames detected: frames 0 and 1 are too similar (pHash distance: 0, threshold: 5). Each frame must be a distinct capture with natural movement.\"\n}"
 						}
 					]
 				}
 			],
-			"description": "Liveness detection endpoints. Single-frame uses ML anti-spoof + heuristics. Multi-frame adds inter-frame motion analysis."
+			"description": "Liveness detection endpoints. Single-frame uses ML anti-spoof + 17 heuristic checks. Multi-frame adds inter-frame motion analysis + duplicate frame detection."
 		},
 		{
 			"name": "Deduplicate",
 			"item": [
 				{
-					"name": "Run Deduplication",
+					"name": "Find Duplicates for Image",
 					"request": {
 						"method": "POST",
 						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"description": "Face image to search for duplicates in the database",
+									"type": "file",
+									"src": ""
+								}
+							]
+						},
 						"url": {
-							"raw": "{{base_url}}/api/v1/deduplicate?threshold=0.85&batch_size=100",
+							"raw": "{{base_url}}/api/v1/deduplicate?limit=50",
 							"host": [
 								"{{base_url}}"
 							],
@@ -837,17 +1091,24 @@
 							"query": [
 								{
 									"key": "threshold",
-									"value": "0.85",
-									"description": "Similarity threshold for duplicate detection (0-1). Uses server default if omitted."
+									"value": "0.4",
+									"description": "Similarity threshold for duplicate detection (0-1). Default: 0.4",
+									"disabled": true
 								},
 								{
-									"key": "batch_size",
-									"value": "100",
-									"description": "Batch size for processing (10-1000, default 100)"
+									"key": "limit",
+									"value": "50",
+									"description": "Max results to return (1-500, default 50)"
+								},
+								{
+									"key": "skip_liveness",
+									"value": "false",
+									"description": "Skip liveness check (admin override). Default: false",
+									"disabled": true
 								}
 							]
 						},
-						"description": "Run a full deduplication pass on all enrolled records. Scans every record and finds pairs exceeding the similarity threshold. This operation can be slow for large datasets."
+						"description": "Upload a face image to find all similar faces in the enrolled database. Runs 17 liveness checks on the query image before searching.\n\nReturns a ranked list of matching enrolled records with similarity scores. Useful for checking if a person is already enrolled before enrollment, or for auditing the database."
 					},
 					"response": [
 						{
@@ -855,8 +1116,18 @@
 							"originalRequest": {
 								"method": "POST",
 								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "image",
+											"type": "file",
+											"src": ""
+										}
+									]
+								},
 								"url": {
-									"raw": "{{base_url}}/api/v1/deduplicate?threshold=0.85&batch_size=100",
+									"raw": "{{base_url}}/api/v1/deduplicate?limit=50",
 									"host": [
 										"{{base_url}}"
 									],
@@ -867,12 +1138,8 @@
 									],
 									"query": [
 										{
-											"key": "threshold",
-											"value": "0.85"
-										},
-										{
-											"key": "batch_size",
-											"value": "100"
+											"key": "limit",
+											"value": "50"
 										}
 									]
 								}
@@ -886,12 +1153,56 @@
 									"value": "application/json"
 								}
 							],
-							"body": "{\n  \"total_records\": 250,\n  \"duplicate_pairs\": [\n    {\n      \"record_a\": {\n        \"id\": \"d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8\",\n        \"name\": \"John Doe\",\n        \"external_id\": \"EMP-2024-001\"\n      },\n      \"record_b\": {\n        \"id\": \"f7e8d9c0-b1a2-4c3d-e4f5-a6b7c8d9e0f1\",\n        \"name\": \"Jon Doe\",\n        \"external_id\": \"EMP-2024-042\"\n      },\n      \"similarity\": 0.9623\n    }\n  ],\n  \"total_duplicates\": 1,\n  \"threshold\": 0.85\n}"
+							"body": "{\n  \"query_face_info\": {\n    \"bbox\": [95, 78, 310, 365],\n    \"det_score\": 0.9992,\n    \"age\": 32,\n    \"gender\": \"M\"\n  },\n  \"duplicates\": [\n    {\n      \"record_id\": \"d4e5f6a7-b8c9-4d0e-a1b2-c3d4e5f6a7b8\",\n      \"name\": \"John Doe\",\n      \"external_id\": \"EMP-2024-001\",\n      \"similarity\": 0.9623,\n      \"metadata\": {\n        \"department\": \"Engineering\",\n        \"location\": \"Lagos\"\n      }\n    },\n    {\n      \"record_id\": \"f7e8d9c0-b1a2-4c3d-e4f5-a6b7c8d9e0f1\",\n      \"name\": \"Jon Doe\",\n      \"external_id\": \"EMP-2024-042\",\n      \"similarity\": 0.9418,\n      \"metadata\": {\n        \"department\": \"Sales\"\n      }\n    }\n  ],\n  \"threshold\": 0.4,\n  \"total_duplicates\": 2\n}"
+						},
+						{
+							"name": "No Duplicates",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "image",
+											"type": "file",
+											"src": ""
+										}
+									]
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/deduplicate?limit=50",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"deduplicate"
+									],
+									"query": [
+										{
+											"key": "limit",
+											"value": "50"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"query_face_info\": {\n    \"bbox\": [80, 65, 290, 350],\n    \"det_score\": 0.9945,\n    \"age\": 25,\n    \"gender\": \"F\"\n  },\n  \"duplicates\": [],\n  \"threshold\": 0.4,\n  \"total_duplicates\": 0\n}"
 						}
 					]
 				}
 			],
-			"description": "Bulk deduplication across all enrolled face records."
+			"description": "Find duplicate faces by uploading an image and searching against all enrolled records. Runs liveness checks on the query image before searching."
 		},
 		{
 			"name": "Records",
