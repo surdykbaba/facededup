@@ -92,6 +92,19 @@ def get_dashboard_html() -> str:
             <strong>API Key Required:</strong> Enter your API key above to load dashboard data.
         </div>
 
+        <!-- API Error Banner (hidden by default) -->
+        <div id="apiErrorBanner" class="hidden bg-amber-900/50 border border-amber-800 rounded-lg p-4 text-sm text-amber-200">
+            <div class="flex items-start gap-2">
+                <svg class="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/>
+                </svg>
+                <div>
+                    <strong>Some API calls failed:</strong>
+                    <ul id="apiErrorList" class="mt-1 space-y-0.5 list-disc list-inside text-amber-300/80"></ul>
+                </div>
+            </div>
+        </div>
+
         <!-- KPI Cards -->
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div class="card p-5">
@@ -347,7 +360,13 @@ async function dashApi(method, path, query = {}) {
     const headers = {};
     if (apiKey) headers['X-API-Key'] = apiKey;
     const resp = await fetch(url, { method, headers });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    if (!resp.ok) {
+        let detail = `HTTP ${resp.status}`;
+        try { const body = await resp.json(); detail += ': ' + (body.detail || JSON.stringify(body)); } catch {}
+        if (resp.status === 401) detail = 'Unauthorized — check your API key';
+        if (resp.status === 403) detail = 'Forbidden — API key is invalid';
+        throw new Error(detail);
+    }
     return resp.json();
 }
 
@@ -355,8 +374,11 @@ async function dashApi(method, path, query = {}) {
 async function refreshAll() {
     const apiKey = document.getElementById('apiKey').value.trim();
     const banner = document.getElementById('errorBanner');
+    const apiBanner = document.getElementById('apiErrorBanner');
+    const apiErrorList = document.getElementById('apiErrorList');
     if (!apiKey) {
         banner.classList.remove('hidden');
+        apiBanner.classList.add('hidden');
         return;
     }
     banner.classList.add('hidden');
@@ -364,6 +386,7 @@ async function refreshAll() {
     const { start, end } = getDateRange();
     const tsInterval = currentRange === '24h' ? 'hour' : 'day';
 
+    const labels = ['Health', 'Analytics Summary', 'Timeseries', 'Index Status', 'Recent Events'];
     const [health, summary, timeseries, indexStatus, recentEvents] = await Promise.allSettled([
         dashApi('GET', '/health'),
         dashApi('GET', '/analytics/summary', { start, end }),
@@ -372,11 +395,40 @@ async function refreshAll() {
         dashApi('GET', '/analytics/events', { limit: 25 }),
     ]);
 
+    // Collect errors from rejected promises
+    const results = [health, summary, timeseries, indexStatus, recentEvents];
+    const errors = [];
+    results.forEach((r, i) => {
+        if (r.status === 'rejected') {
+            errors.push(labels[i] + ': ' + r.reason.message);
+            console.error('[Dashboard] ' + labels[i] + ' failed:', r.reason.message);
+        }
+    });
+
+    if (errors.length > 0) {
+        apiErrorList.innerHTML = errors.map(e => '<li>' + e + '</li>').join('');
+        apiBanner.classList.remove('hidden');
+    } else {
+        apiBanner.classList.add('hidden');
+    }
+
     if (health.status === 'fulfilled') renderHealth(health.value);
     if (summary.status === 'fulfilled') renderSummary(summary.value);
     if (timeseries.status === 'fulfilled') renderTimeseries(timeseries.value);
     if (indexStatus.status === 'fulfilled') renderIndexStatus(indexStatus.value);
     if (recentEvents.status === 'fulfilled') renderRecentEvents(recentEvents.value);
+
+    // Show zeroes instead of '--' when calls succeed but data is empty
+    if (summary.status === 'fulfilled' && summary.value.total_events === 0) {
+        document.getElementById('kpiEvents').textContent = '0';
+        document.getElementById('kpiSuccessRate').textContent = 'N/A';
+        document.getElementById('kpiSuccessRate').className = 'text-3xl font-bold mt-2 text-gray-500';
+        document.getElementById('kpiLatency').textContent = 'N/A';
+    }
+    if (indexStatus.status !== 'fulfilled') {
+        document.getElementById('kpiRecords').textContent = '--';
+        document.getElementById('kpiIndexLabel').textContent = 'Could not fetch index status';
+    }
 
     document.getElementById('lastRefresh').textContent = 'Last refresh: ' + new Date().toLocaleTimeString();
 }
@@ -399,18 +451,21 @@ function renderHealth(data) {
     const redisOk = data.redis === 'healthy';
     const modelOk = data.face_model === 'loaded';
     const gpuOn = data.gpu_enabled === true;
-    setHealthPill('healthDB', dbOk, dbOk ? 'Database' : 'DB Down');
-    setHealthPill('healthRedis', redisOk, redisOk ? 'Redis' : 'Redis Down');
-    setHealthPill('healthModel', modelOk, modelOk ? 'Face Model' : 'Model Missing');
-    setHealthPill('healthGPU', gpuOn, gpuOn ? 'GPU Active' : 'CPU Only');
+    setHealthPill('healthDB', dbOk, dbOk ? 'Database' : 'DB Down', false);
+    setHealthPill('healthRedis', redisOk, redisOk ? 'Redis' : 'Redis Down', false);
+    setHealthPill('healthModel', modelOk, modelOk ? 'Face Model' : 'Model Missing', false);
+    setHealthPill('healthGPU', gpuOn, gpuOn ? 'GPU Active' : 'CPU Only', !gpuOn);
     const asOk = data.anti_spoof_loaded === true;
-    setHealthPill('healthAntiSpoof', asOk, asOk ? 'Anti-Spoof' : 'No Anti-Spoof');
+    setHealthPill('healthAntiSpoof', asOk, asOk ? 'Anti-Spoof' : 'No Anti-Spoof', !asOk);
 }
 
-function setHealthPill(id, ok, label) {
+function setHealthPill(id, ok, label, infoOnly) {
     const el = document.getElementById(id);
-    const dotClass = ok ? 'dot-green' : (ok === false ? 'dot-red' : 'dot-gray');
-    const pillClass = ok ? 'pill-green' : (ok === false ? 'pill-red' : 'pill-gray');
+    let dotClass, pillClass;
+    if (ok) { dotClass = 'dot-green'; pillClass = 'pill-green'; }
+    else if (infoOnly) { dotClass = 'dot-yellow'; pillClass = 'pill-yellow'; }
+    else if (ok === false) { dotClass = 'dot-red'; pillClass = 'pill-red'; }
+    else { dotClass = 'dot-gray'; pillClass = 'pill-gray'; }
     el.className = 'pill ' + pillClass;
     el.innerHTML = '<span class="status-dot ' + dotClass + '"></span>' + label;
 }

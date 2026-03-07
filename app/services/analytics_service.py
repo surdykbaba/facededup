@@ -50,7 +50,7 @@ async def _persist_event(
             session.add(event)
             await session.commit()
     except Exception:
-        logger.debug("Failed to log analytics event (non-fatal)", exc_info=True)
+        logger.warning("Failed to log analytics event (non-fatal)", exc_info=True)
 
 
 def log_event(
