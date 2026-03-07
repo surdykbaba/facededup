@@ -10,9 +10,9 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy to DigitalOcean
+    name: Deploy to Production Server
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Deploy via SSH
@@ -21,10 +21,10 @@ jobs:
           host: ${{ secrets.DO_HOST }}
           username: ${{ secrets.DO_USER }}
           password: ${{ secrets.DO_PASSWORD }}
-          command_timeout: 10m
+          command_timeout: 15m
           script: |
             set -e
-            cd /home/deployer/facededup
+            cd /home/${{ secrets.DO_USER }}/facededup
 
             echo "=== Pulling latest code ==="
             git fetch origin main
@@ -37,13 +37,13 @@ jobs:
             docker compose -f docker-compose.prod.yaml up -d --remove-orphans
 
             echo "=== Waiting for API to be healthy ==="
-            for i in $(seq 1 60); do
+            for i in $(seq 1 90); do
               if curl -sf http://localhost/api/v1/health > /dev/null 2>&1; then
                 echo "API is healthy!"
                 break
               fi
-              if [ "$i" -eq 60 ]; then
-                echo "ERROR: API failed health check after 60 seconds"
+              if [ "$i" -eq 90 ]; then
+                echo "ERROR: API failed health check after 90 seconds"
                 docker compose -f docker-compose.prod.yaml logs --tail=50 api
                 exit 1
               fi
