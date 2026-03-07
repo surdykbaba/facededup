@@ -12,4 +12,5 @@ class HealthResponse(BaseModel):
     redis: str
     face_model: str
     gpu_enabled: bool
+    anti_spoof_loaded: bool
     version: str

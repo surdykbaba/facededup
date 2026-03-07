@@ -34,6 +34,7 @@ async def health_check(request: Request) -> HealthResponse:
     # Check face model
     model_status = "loaded" if hasattr(request.app.state, "face_analyzer") else "not loaded"
     gpu_enabled = getattr(request.app.state, "gpu_enabled", False)
+    anti_spoof_loaded = getattr(request.app.state, "anti_spoof", None) is not None
 
     overall = "healthy" if db_status == "healthy" and redis_status == "healthy" and model_status == "loaded" else "degraded"
 
@@ -43,5 +44,6 @@ async def health_check(request: Request) -> HealthResponse:
         redis=redis_status,
         face_model=model_status,
         gpu_enabled=gpu_enabled,
+        anti_spoof_loaded=anti_spoof_loaded,
         version=settings.APP_VERSION,
     )

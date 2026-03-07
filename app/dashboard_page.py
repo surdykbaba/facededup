@@ -395,11 +395,16 @@ async function refreshEvents() {
 // ===== Render Functions =====
 
 function renderHealth(data) {
-    setHealthPill('healthDB', data.database === 'connected', data.database === 'connected' ? 'Database' : 'DB Down');
-    setHealthPill('healthRedis', data.redis === 'connected', data.redis === 'connected' ? 'Redis' : 'Redis Down');
-    setHealthPill('healthModel', data.face_model_loaded, data.face_model_loaded ? 'Face Model' : 'Model Missing');
-    setHealthPill('healthGPU', data.gpu_enabled, data.gpu_enabled ? 'GPU Active' : 'CPU Only');
-    setHealthPill('healthAntiSpoof', data.anti_spoof_loaded, data.anti_spoof_loaded ? 'Anti-Spoof' : 'No Anti-Spoof');
+    const dbOk = data.database === 'healthy';
+    const redisOk = data.redis === 'healthy';
+    const modelOk = data.face_model === 'loaded';
+    const gpuOn = data.gpu_enabled === true;
+    setHealthPill('healthDB', dbOk, dbOk ? 'Database' : 'DB Down');
+    setHealthPill('healthRedis', redisOk, redisOk ? 'Redis' : 'Redis Down');
+    setHealthPill('healthModel', modelOk, modelOk ? 'Face Model' : 'Model Missing');
+    setHealthPill('healthGPU', gpuOn, gpuOn ? 'GPU Active' : 'CPU Only');
+    const asOk = data.anti_spoof_loaded === true;
+    setHealthPill('healthAntiSpoof', asOk, asOk ? 'Anti-Spoof' : 'No Anti-Spoof');
 }
 
 function setHealthPill(id, ok, label) {
