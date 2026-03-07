@@ -80,8 +80,8 @@ def get_docs_html() -> str:
                         <span class="bg-blue-100 text-blue-800 text-xs font-bold px-2.5 py-1 rounded">POST</span>
                         <code class="text-sm font-semibold">/api/v1/enroll</code>
                     </div>
-                    <p class="text-sm text-gray-600 mb-1">Enroll a new face. Detects face, runs liveness checks, extracts embedding, stores record.</p>
-                    <p class="text-xs text-gray-400 mb-3">Returns duplicate_info if a matching face already exists in the database.</p>
+                    <p class="text-sm text-gray-600 mb-1">Enroll a new face. <strong>Multi-frame liveness is required</strong> &mdash; provide 3-5 sequential images to prove liveness.</p>
+                    <p class="text-xs text-gray-400 mb-3">Duplicate frames are rejected automatically. Returns duplicate_info if a matching face already exists.</p>
                     <button onclick="togglePanel('enroll')" class="text-sm font-medium text-blue-600 hover:text-blue-800">Try it &darr;</button>
                 </div>
                 <div id="panel-enroll" class="try-panel border-t bg-gray-50">
@@ -92,7 +92,7 @@ def get_docs_html() -> str:
                             <div id="enroll-preview" class="mt-2"></div>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Additional Frames <span class="text-gray-400 font-normal">(optional, 2-4 for multi-frame liveness)</span></label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Additional Frames <span class="text-red-500">*</span> <span class="text-gray-400 font-normal">(2-4 distinct captures with slight head movement)</span></label>
                             <input type="file" id="enroll-frames" accept=".jpg,.jpeg,.png,.webp" multiple class="text-sm">
                         </div>
                         <div class="grid grid-cols-2 gap-4">
@@ -515,7 +515,14 @@ async function sendHealth() {
 // ─── Enroll ───
 async function sendEnroll() {
     const fileInput = document.getElementById('enroll-image');
-    if (!fileInput.files.length) { showError('res-enroll', { message: 'Please select an image' }); return; }
+    if (!fileInput.files.length) { showError('res-enroll', { message: 'Please select a primary image' }); return; }
+
+    const framesInput = document.getElementById('enroll-frames');
+    const skipLive = document.getElementById('enroll-skip-liveness').checked;
+    if (!skipLive && framesInput.files.length < 2) {
+        showError('res-enroll', { message: 'Multi-frame liveness is required. Please select at least 2 additional frames (3-5 total including primary image). Each frame should show slight head movement.' });
+        return;
+    }
 
     setButtonLoading('btn-enroll', true);
     showLoading('res-enroll');
@@ -523,13 +530,11 @@ async function sendEnroll() {
         const fd = new FormData();
         fd.append('image', fileInput.files[0]);
 
-        const framesInput = document.getElementById('enroll-frames');
         for (const f of framesInput.files) fd.append('frames', f);
 
         const name = document.getElementById('enroll-name').value;
         const extId = document.getElementById('enroll-external-id').value;
         const meta = document.getElementById('enroll-metadata').value;
-        const skipLive = document.getElementById('enroll-skip-liveness').checked;
 
         if (name) fd.append('name', name);
         if (extId) fd.append('external_id', extId);

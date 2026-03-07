@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     MULTIFRAME_LIVENESS_ENABLED: bool = True
     MULTIFRAME_MIN_FRAMES: int = 3
     MULTIFRAME_MAX_FRAMES: int = 5
-    MULTIFRAME_ENROLL_REQUIRED: bool = False
+    MULTIFRAME_ENROLL_REQUIRED: bool = True
     MULTIFRAME_IDENTITY_SIM_MIN: float = 0.65
     MULTIFRAME_LANDMARK_DISP_MIN: float = 0.008
     MULTIFRAME_LANDMARK_DISP_MAX: float = 0.25
@@ -94,6 +94,11 @@ class Settings(BaseSettings):
     MULTIFRAME_FLOW_DIR_STD_MIN: float = 0.3
     MULTIFRAME_BBOX_SHIFT_STD_MIN: float = 0.003
     MULTIFRAME_BBOX_SHIFT_MAX: float = 0.15
+
+    # Frame uniqueness / duplicate detection
+    MULTIFRAME_FRAME_HASH_ENABLED: bool = True
+    MULTIFRAME_FRAME_HASH_THRESHOLD: int = 5           # pHash Hamming distance; 0=identical, <5=near-dup
+    MULTIFRAME_FRAME_EMBEDDING_SIM_MAX: float = 0.998  # max cosine similarity between any two frames
 
     # Duplicate detection at enrollment
     ENROLL_DEDUP_ENABLED: bool = True

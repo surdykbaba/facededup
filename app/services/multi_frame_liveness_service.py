@@ -6,7 +6,7 @@ import numpy as np
 from insightface.app import FaceAnalysis
 
 from app.config import get_settings
-from app.core.exceptions import InsufficientFramesError, NoFaceDetectedError
+from app.core.exceptions import DuplicateFramesError, InsufficientFramesError, NoFaceDetectedError
 from app.services.face_service import FaceService
 from app.services.liveness_service import LivenessService
 
@@ -25,7 +25,8 @@ class MultiFrameLivenessService:
     """Multi-frame active liveness detection.
 
     Requires 3-5 sequential image frames. Runs:
-      1. Per-frame passive liveness checks (11 checks each, via LivenessService)
+      0. Frame uniqueness check (rejects duplicate/near-duplicate frames)
+      1. Per-frame passive liveness checks (17 checks each, via LivenessService)
       2. Inter-frame active checks (5 checks):
          - Identity consistency (same person across frames)
          - Landmark displacement (real facial movement)
@@ -35,6 +36,8 @@ class MultiFrameLivenessService:
 
     A static image (cartoon, printed photo, screen replay) cannot produce
     genuine inter-frame motion and will fail the active checks.
+    Submitting the same image multiple times is caught by the pHash and
+    embedding similarity duplicate detection.
     """
 
     def __init__(self, analyzer: FaceAnalysis, anti_spoof=None):
@@ -43,6 +46,34 @@ class MultiFrameLivenessService:
         self._liveness_svc = LivenessService(analyzer, anti_spoof=anti_spoof)
         self._face_svc = FaceService(analyzer)
         self._primary_frame_data: tuple | None = None
+
+    # ------------------------------------------------------------------
+    # Frame uniqueness helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _compute_phash(image_bytes: bytes, hash_size: int = 8) -> np.ndarray:
+        """Compute perceptual hash (pHash) of an image.
+
+        Uses DCT-based approach: resize to 32x32 grayscale, apply DCT,
+        take the top-left 8x8 block, threshold by median.
+        Returns a flat boolean array of 64 bits.
+        """
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            return np.zeros(hash_size * hash_size, dtype=bool)
+
+        resized = cv2.resize(img, (32, 32), interpolation=cv2.INTER_AREA)
+        dct = cv2.dct(np.float32(resized))
+        dct_low = dct[:hash_size, :hash_size]
+        median_val = np.median(dct_low)
+        return (dct_low > median_val).flatten()
+
+    @staticmethod
+    def _hamming_distance(hash_a: np.ndarray, hash_b: np.ndarray) -> int:
+        """Hamming distance between two binary hash arrays."""
+        return int(np.sum(hash_a != hash_b))
 
     # ------------------------------------------------------------------
     # Public API
@@ -67,6 +98,21 @@ class MultiFrameLivenessService:
             raise InsufficientFramesError(
                 f"Maximum {s.MULTIFRAME_MAX_FRAMES} frames, got {len(frames)}"
             )
+
+        # Tier 1: Fast pixel-level duplicate check (before expensive face detection)
+        if s.MULTIFRAME_FRAME_HASH_ENABLED:
+            hashes = [self._compute_phash(fb) for fb in frames]
+            for i in range(len(hashes)):
+                for j in range(i + 1, len(hashes)):
+                    dist = self._hamming_distance(hashes[i], hashes[j])
+                    if dist <= s.MULTIFRAME_FRAME_HASH_THRESHOLD:
+                        raise DuplicateFramesError(
+                            f"Frames {i} and {j} are identical or near-identical "
+                            f"(pHash distance: {dist}, max allowed: "
+                            f"{s.MULTIFRAME_FRAME_HASH_THRESHOLD}). "
+                            f"Each frame must be a distinct capture."
+                        )
+            logger.info("pHash uniqueness check passed for %d frames", len(frames))
 
         # Detect face in each frame
         frame_data = []
@@ -98,6 +144,23 @@ class MultiFrameLivenessService:
         images = [fd[0] for fd in frame_data]
         faces = [fd[1] for fd in frame_data]
         face_crops = [fd[2] for fd in frame_data]
+
+        # ----------------------------------------------------------
+        # Step 0: Embedding-based near-duplicate check (Tier 2)
+        # ----------------------------------------------------------
+        if s.MULTIFRAME_FRAME_HASH_ENABLED:
+            embeddings_for_dedup = [f.normed_embedding for f in faces]
+            for i in range(len(faces)):
+                for j in range(i + 1, len(faces)):
+                    sim = float(np.dot(embeddings_for_dedup[i], embeddings_for_dedup[j]))
+                    if sim > s.MULTIFRAME_FRAME_EMBEDDING_SIM_MAX:
+                        raise DuplicateFramesError(
+                            f"Frames {i} and {j} are near-duplicate "
+                            f"(embedding similarity: {sim:.4f}, "
+                            f"max allowed: {s.MULTIFRAME_FRAME_EMBEDDING_SIM_MAX}). "
+                            f"Each frame must show a distinct pose or expression."
+                        )
+            logger.info("Embedding uniqueness check passed for %d frames", len(faces))
 
         # ----------------------------------------------------------
         # Step 1: Per-frame passive liveness checks

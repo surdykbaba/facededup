@@ -51,6 +51,11 @@ class InsufficientFramesError(FaceDeduplicationError):
     detail = "Multi-frame liveness requires 3-5 image frames"
 
 
+class DuplicateFramesError(FaceDeduplicationError):
+    status_code = 400
+    detail = "Duplicate or near-duplicate frames detected"
+
+
 async def face_error_handler(
     request: Request, exc: FaceDeduplicationError
 ) -> JSONResponse:

@@ -65,9 +65,12 @@ async def enroll_face(
     if settings.MULTIFRAME_ENROLL_REQUIRED and not skip_liveness:
         if not has_extra_frames:
             raise InsufficientFramesError(
-                f"Multi-frame liveness required for enrollment. "
-                f"Provide {settings.MULTIFRAME_MIN_FRAMES - 1}-"
-                f"{settings.MULTIFRAME_MAX_FRAMES - 1} additional frames."
+                f"Multi-frame liveness is required for enrollment. "
+                f"Provide {settings.MULTIFRAME_MIN_FRAMES - 1} to "
+                f"{settings.MULTIFRAME_MAX_FRAMES - 1} additional frames "
+                f"(total {settings.MULTIFRAME_MIN_FRAMES}-{settings.MULTIFRAME_MAX_FRAMES} "
+                f"including the primary image). Each frame must be a distinct "
+                f"capture showing slight head movement or expression change."
             )
 
     liveness_info = None
