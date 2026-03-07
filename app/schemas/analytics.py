@@ -40,3 +40,19 @@ class EventListResponse(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+class TimeseriesBucket(BaseModel):
+    timestamp: datetime
+    total: int
+    success: int
+    failed: int
+    error: int
+    avg_duration_ms: float | None
+
+
+class TimeseriesResponse(BaseModel):
+    interval: str
+    period_start: datetime
+    period_end: datetime
+    buckets: list[TimeseriesBucket]

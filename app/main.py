@@ -35,6 +35,33 @@ def _detect_providers() -> list[str]:
     return ["CPUExecutionProvider"]
 
 
+def _check_basic_auth(request: Request, password: str, realm: str) -> Response | None:
+    """Verify HTTP Basic Auth. Returns an error Response or None if auth passes."""
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Basic "):
+        return Response(
+            status_code=401,
+            headers={"WWW-Authenticate": f'Basic realm="{realm}"'},
+            content="Authentication required",
+        )
+    try:
+        decoded = base64.b64decode(auth[6:]).decode("utf-8")
+        _, provided_pw = decoded.split(":", 1)
+    except Exception:
+        return Response(
+            status_code=401,
+            headers={"WWW-Authenticate": f'Basic realm="{realm}"'},
+            content="Invalid credentials",
+        )
+    if not secrets.compare_digest(provided_pw, password):
+        return Response(
+            status_code=401,
+            headers={"WWW-Authenticate": f'Basic realm="{realm}"'},
+            content="Invalid password",
+        )
+    return None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -118,29 +145,22 @@ def create_app() -> FastAPI:
     async def docs_page(request: Request):
         docs_pw = settings.DOCS_PASSWORD
         if docs_pw:
-            auth = request.headers.get("authorization", "")
-            if not auth.startswith("Basic "):
-                return Response(
-                    status_code=401,
-                    headers={"WWW-Authenticate": 'Basic realm="FaceDedup Docs"'},
-                    content="Authentication required",
-                )
-            try:
-                decoded = base64.b64decode(auth[6:]).decode("utf-8")
-                _, password = decoded.split(":", 1)
-            except Exception:
-                return Response(
-                    status_code=401,
-                    headers={"WWW-Authenticate": 'Basic realm="FaceDedup Docs"'},
-                    content="Invalid credentials",
-                )
-            if not secrets.compare_digest(password, docs_pw):
-                return Response(
-                    status_code=401,
-                    headers={"WWW-Authenticate": 'Basic realm="FaceDedup Docs"'},
-                    content="Invalid password",
-                )
+            auth_error = _check_basic_auth(request, docs_pw, "FaceDedup Docs")
+            if auth_error:
+                return auth_error
         return get_docs_html()
+
+    # Dashboard page (password-protected via HTTP Basic Auth)
+    from app.dashboard_page import get_dashboard_html
+
+    @app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+    async def dashboard_page(request: Request):
+        docs_pw = settings.DOCS_PASSWORD
+        if docs_pw:
+            auth_error = _check_basic_auth(request, docs_pw, "FaceDedup Dashboard")
+            if auth_error:
+                return auth_error
+        return get_dashboard_html()
 
     @app.get("/api/v1/postman", include_in_schema=False)
     async def postman_collection():

@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import case, func, select
@@ -13,6 +13,8 @@ from app.schemas.analytics import (
     EventListItem,
     EventListResponse,
     EventTypeSummary,
+    TimeseriesBucket,
+    TimeseriesResponse,
 )
 
 router = APIRouter()
@@ -137,4 +139,71 @@ async def analytics_events(
         total=total,
         offset=offset,
         limit=limit,
+    )
+
+
+@router.get("/analytics/timeseries", response_model=TimeseriesResponse)
+async def analytics_timeseries(
+    start: datetime | None = Query(None, description="Start of date range (ISO 8601)"),
+    end: datetime | None = Query(None, description="End of date range (ISO 8601)"),
+    interval: str = Query("hour", description="Bucket size: 'hour' or 'day'"),
+    event_type: str | None = Query(None, description="Filter by event type"),
+    db: AsyncSession = Depends(get_db),
+    _api_key: str = Depends(verify_api_key),
+) -> TimeseriesResponse:
+    """Get time-series analytics bucketed by hour or day.
+
+    Returns event counts and average latency per time bucket.
+    Useful for trend charts. Defaults to last 7 days with hourly buckets.
+    """
+    if interval not in ("hour", "day"):
+        interval = "hour"
+
+    now = datetime.now(timezone.utc)
+    if not end:
+        end = now
+    if not start:
+        start = now - timedelta(days=7)
+
+    filters = [ApiEvent.created_at >= start, ApiEvent.created_at <= end]
+    if event_type:
+        filters.append(ApiEvent.event_type == event_type)
+
+    bucket = func.date_trunc(interval, ApiEvent.created_at).label("bucket")
+    stmt = (
+        select(
+            bucket,
+            func.count().label("total"),
+            func.count(case((ApiEvent.status == "success", 1))).label("success"),
+            func.count(case((ApiEvent.status == "failed", 1))).label("failed"),
+            func.count(case((ApiEvent.status == "error", 1))).label("error"),
+            func.avg(ApiEvent.duration_ms).label("avg_duration_ms"),
+        )
+        .where(*filters)
+        .group_by(bucket)
+        .order_by(bucket)
+    )
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    buckets = [
+        TimeseriesBucket(
+            timestamp=row.bucket,
+            total=row.total,
+            success=row.success,
+            failed=row.failed,
+            error=row.error,
+            avg_duration_ms=round(float(row.avg_duration_ms), 1)
+            if row.avg_duration_ms
+            else None,
+        )
+        for row in rows
+    ]
+
+    return TimeseriesResponse(
+        interval=interval,
+        period_start=start,
+        period_end=end,
+        buckets=buckets,
     )
