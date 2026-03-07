@@ -70,6 +70,10 @@ class Settings(BaseSettings):
     LIVENESS_NOISE_LEVEL_MIN: float = 0.8
     LIVENESS_COLOR_CORR_MIN: float = 0.50
 
+    # Face occlusion detection (masks, sunglasses)
+    LIVENESS_LOWER_FACE_SKIN_MIN: float = 0.25  # min skin ratio in lower face (catches masks)
+    LIVENESS_EYE_CONTRAST_MIN: float = 15.0  # min gradient contrast in eye region (catches sunglasses)
+
     # ML Anti-Spoofing (Silent-Face-Anti-Spoofing)
     ANTISPOOF_ENABLED: bool = True
     ANTISPOOF_REAL_SCORE_MIN: float = 0.53

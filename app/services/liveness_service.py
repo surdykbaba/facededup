@@ -23,7 +23,7 @@ class CheckResult(NamedTuple):
 class LivenessService:
     """Liveness detection combining ML anti-spoof with heuristic checks.
 
-    Checks performed (up to 15 total):
+    Checks performed (up to 17 total):
     MANDATORY (all must pass):
       1. Detection confidence
       2. Landmark geometric quality
@@ -32,16 +32,18 @@ class LivenessService:
       5. Glare/reflection detection
       6. Texture / LBP variance
       7. Edge density + uniformity
+      8. Lower face visibility (rejects face masks)
+      9. Eye visibility (rejects sunglasses)
 
-    OPTIONAL (configurable tolerance, default allow 2 failures):
+    OPTIONAL (configurable tolerance, default allow 3 failures):
       0. ML Anti-Spoof model (Silent-Face ensemble, if loaded)
-      8. Camera noise pattern
-      9. Color channel correlation
-     10. Sharpness (Laplacian variance)
-     11. Color distribution
-     12. Face size ratio
-     13. Embedding norm / quality
-     14. Gradient smoothness (AI image detection)
+     10. Camera noise pattern
+     11. Color channel correlation
+     12. Sharpness (Laplacian variance)
+     13. Color distribution
+     14. Face size ratio
+     15. Embedding norm / quality
+     16. Gradient smoothness (AI image detection)
     """
 
     def __init__(self, analyzer: FaceAnalysis, anti_spoof=None):
@@ -77,7 +79,7 @@ class LivenessService:
         s = self._settings
 
         all_checks = [
-            # Mandatory (7 heuristic checks — ALL must pass)
+            # Mandatory (9 heuristic checks — ALL must pass)
             self._check_detection_confidence(face, s.LIVENESS_DET_SCORE_MIN),
             self._check_landmark_quality(face, s.LIVENESS_LANDMARK_QUALITY_MIN),
             self._check_skin_tone(face_crop, s),
@@ -87,6 +89,12 @@ class LivenessService:
             self._check_edge_density(
                 face_crop, s.LIVENESS_EDGE_DENSITY_MIN,
                 s.LIVENESS_EDGE_DENSITY_MAX, s.LIVENESS_EDGE_UNIFORMITY_MAX,
+            ),
+            self._check_lower_face_visibility(
+                face_crop, face, s.LIVENESS_LOWER_FACE_SKIN_MIN,
+            ),
+            self._check_eye_visibility(
+                face_crop, face, s.LIVENESS_EYE_CONTRAST_MIN,
             ),
         ]
 
@@ -462,6 +470,134 @@ class LivenessService:
             detail=(
                 f"Edge density: {edge_density:.4f} (range: {min_density}-{max_density}), "
                 f"uniformity_std: {edge_uniformity_std:.4f} (max: {max_uniformity_std})"
+            ),
+            mandatory=True,
+        )
+
+    @staticmethod
+    def _check_lower_face_visibility(
+        face_crop: np.ndarray, face, min_skin_ratio: float,
+    ) -> CheckResult:
+        """Detect face masks by checking skin-colored pixels in the lower face.
+
+        Splits the face crop into upper and lower halves. The lower half
+        (nose, mouth, chin) should contain visible skin. Face masks
+        (medical, cloth, N95) cover this region, producing very low
+        skin pixel ratios in the lower half.
+
+        Uses the nose landmark as the split point when available.
+        """
+        h, w = face_crop.shape[:2]
+        if h < 20 or w < 20:
+            return CheckResult(
+                name="lower_face_visibility", passed=False, score=0.0,
+                detail="Face crop too small for occlusion check", mandatory=True,
+            )
+
+        # Use nose landmark to find the split point
+        split_y = h // 2
+        if hasattr(face, "kps") and face.kps is not None:
+            bbox = face.bbox.astype(int)
+            nose = face.kps[2]  # nose tip
+            # Convert nose Y from image coords to face_crop coords
+            nose_y_in_crop = int(nose[1]) - max(0, bbox[1])
+            if 0 < nose_y_in_crop < h:
+                split_y = nose_y_in_crop
+
+        lower_face = face_crop[split_y:, :, :]
+
+        # Check skin pixels in lower face using HSV
+        hsv = cv2.cvtColor(lower_face, cv2.COLOR_BGR2HSV)
+        lower1 = np.array([0, 10, 50], dtype=np.uint8)
+        upper1 = np.array([50, 220, 255], dtype=np.uint8)
+        mask1 = cv2.inRange(hsv, lower1, upper1)
+
+        lower2 = np.array([160, 10, 50], dtype=np.uint8)
+        upper2 = np.array([180, 220, 255], dtype=np.uint8)
+        mask2 = cv2.inRange(hsv, lower2, upper2)
+
+        skin_mask = cv2.bitwise_or(mask1, mask2)
+        total_pixels = skin_mask.size
+        skin_ratio = float(np.count_nonzero(skin_mask)) / total_pixels if total_pixels > 0 else 0.0
+
+        passed = skin_ratio >= min_skin_ratio
+
+        return CheckResult(
+            name="lower_face_visibility",
+            passed=passed,
+            score=round(skin_ratio, 4),
+            detail=(
+                f"Lower face skin ratio: {skin_ratio:.4f} (min: {min_skin_ratio}). "
+                f"Low values indicate face mask or covering"
+            ),
+            mandatory=True,
+        )
+
+    @staticmethod
+    def _check_eye_visibility(
+        face_crop: np.ndarray, face, min_contrast: float,
+    ) -> CheckResult:
+        """Detect sunglasses by analyzing gradient contrast in eye regions.
+
+        Extracts small patches around each eye landmark and measures
+        gradient magnitude (Sobel). Real uncovered eyes have rich
+        gradients from iris, pupil, eyelid edges. Sunglasses produce
+        uniformly dark regions with very low gradient contrast.
+        """
+        if not hasattr(face, "kps") or face.kps is None:
+            return CheckResult(
+                name="eye_visibility", passed=False, score=0.0,
+                detail="No landmarks for eye visibility check", mandatory=True,
+            )
+
+        h, w = face_crop.shape[:2]
+        bbox = face.bbox.astype(int)
+        x_off = max(0, bbox[0])
+        y_off = max(0, bbox[1])
+
+        left_eye = face.kps[0]
+        right_eye = face.kps[1]
+
+        # Eye patch size: ~12% of face width
+        eye_dist = float(np.linalg.norm(left_eye - right_eye))
+        patch_r = max(8, int(eye_dist * 0.25))
+
+        eye_contrasts = []
+        for eye in [left_eye, right_eye]:
+            # Convert to face_crop coords
+            ex = int(eye[0]) - x_off
+            ey = int(eye[1]) - y_off
+
+            # Clamp to crop bounds
+            y1 = max(0, ey - patch_r)
+            y2 = min(h, ey + patch_r)
+            x1 = max(0, ex - patch_r)
+            x2 = min(w, ex + patch_r)
+
+            if y2 - y1 < 5 or x2 - x1 < 5:
+                eye_contrasts.append(0.0)
+                continue
+
+            patch = face_crop[y1:y2, x1:x2]
+            gray_patch = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
+
+            # Sobel gradient magnitude
+            gx = cv2.Sobel(gray_patch, cv2.CV_64F, 1, 0, ksize=3)
+            gy = cv2.Sobel(gray_patch, cv2.CV_64F, 0, 1, ksize=3)
+            mag = np.sqrt(gx ** 2 + gy ** 2)
+            eye_contrasts.append(float(np.mean(mag)))
+
+        avg_contrast = float(np.mean(eye_contrasts)) if eye_contrasts else 0.0
+        passed = avg_contrast >= min_contrast
+
+        return CheckResult(
+            name="eye_visibility",
+            passed=passed,
+            score=round(avg_contrast, 2),
+            detail=(
+                f"Eye region gradient: {avg_contrast:.2f} (min: {min_contrast}). "
+                f"Left: {eye_contrasts[0]:.2f}, Right: {eye_contrasts[1]:.2f}. "
+                f"Low values indicate sunglasses or eye covering"
             ),
             mandatory=True,
         )
