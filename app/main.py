@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 import redis.asyncio as aioredis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from insightface.app import FaceAnalysis
 
 from app.api.v1.router import v1_router
@@ -105,6 +106,13 @@ def create_app() -> FastAPI:
 
     # Routes
     app.include_router(v1_router, prefix=settings.API_V1_PREFIX)
+
+    # Documentation page
+    from app.docs_page import get_docs_html
+
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    async def docs_page():
+        return get_docs_html()
 
     return app
 
