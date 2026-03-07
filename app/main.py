@@ -1,10 +1,12 @@
+import base64
 import logging
+import secrets
 from contextlib import asynccontextmanager
 
 import redis.asyncio as aioredis
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from insightface.app import FaceAnalysis
 
 from app.api.v1.router import v1_router
@@ -107,11 +109,35 @@ def create_app() -> FastAPI:
     # Routes
     app.include_router(v1_router, prefix=settings.API_V1_PREFIX)
 
-    # Documentation page
+    # Documentation page (password-protected via HTTP Basic Auth)
     from app.docs_page import get_docs_html
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
-    async def docs_page():
+    async def docs_page(request: Request):
+        docs_pw = settings.DOCS_PASSWORD
+        if docs_pw:
+            auth = request.headers.get("authorization", "")
+            if not auth.startswith("Basic "):
+                return Response(
+                    status_code=401,
+                    headers={"WWW-Authenticate": 'Basic realm="FaceDedup Docs"'},
+                    content="Authentication required",
+                )
+            try:
+                decoded = base64.b64decode(auth[6:]).decode("utf-8")
+                _, password = decoded.split(":", 1)
+            except Exception:
+                return Response(
+                    status_code=401,
+                    headers={"WWW-Authenticate": 'Basic realm="FaceDedup Docs"'},
+                    content="Invalid credentials",
+                )
+            if not secrets.compare_digest(password, docs_pw):
+                return Response(
+                    status_code=401,
+                    headers={"WWW-Authenticate": 'Basic realm="FaceDedup Docs"'},
+                    content="Invalid password",
+                )
         return get_docs_html()
 
     return app

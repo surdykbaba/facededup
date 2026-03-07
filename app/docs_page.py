@@ -212,7 +212,7 @@ def get_docs_html() -> str:
                         <span class="bg-blue-100 text-blue-800 text-xs font-bold px-2.5 py-1 rounded">POST</span>
                         <code class="text-sm font-semibold">/api/v1/liveness</code>
                     </div>
-                    <p class="text-sm text-gray-600 mb-3">Passive single-frame liveness check. Runs 15 heuristic + ML checks to detect spoofing (printed photos, screen replays, cartoons).</p>
+                    <p class="text-sm text-gray-600 mb-3">Passive single-frame liveness check. Runs 17 heuristic + ML checks to detect spoofing (printed photos, screen replays, cartoons, face masks, sunglasses).</p>
                     <button onclick="togglePanel('liveness')" class="text-sm font-medium text-blue-600 hover:text-blue-800">Try it &darr;</button>
                 </div>
                 <div id="panel-liveness" class="try-panel border-t bg-gray-50">
@@ -260,20 +260,29 @@ def get_docs_html() -> str:
                         <span class="bg-blue-100 text-blue-800 text-xs font-bold px-2.5 py-1 rounded">POST</span>
                         <code class="text-sm font-semibold">/api/v1/deduplicate</code>
                     </div>
-                    <p class="text-sm text-gray-600 mb-3">Scan all enrolled records for duplicate face pairs. Returns pairs exceeding the similarity threshold.</p>
+                    <p class="text-sm text-gray-600 mb-3">Find duplicate faces in the database. Upload a face image and the system returns all enrolled records that look similar (above the similarity threshold).</p>
                     <button onclick="togglePanel('dedup')" class="text-sm font-medium text-blue-600 hover:text-blue-800">Try it &darr;</button>
                 </div>
                 <div id="panel-dedup" class="try-panel border-t bg-gray-50">
                     <div class="p-5 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Image <span class="text-red-500">*</span></label>
+                            <input type="file" id="dedup-image" accept=".jpg,.jpeg,.png,.webp" onchange="previewFile(this, 'dedup-preview')" class="text-sm">
+                            <div id="dedup-preview" class="mt-2"></div>
+                        </div>
                         <div class="grid grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">Threshold <span class="text-gray-400 font-normal">(0-1, default 0.4)</span></label>
                                 <input type="number" id="dedup-threshold" min="0" max="1" step="0.01" placeholder="0.4" class="w-full border rounded-lg px-3 py-2 text-sm">
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Batch Size <span class="text-gray-400 font-normal">(10-1000, default 100)</span></label>
-                                <input type="number" id="dedup-batch-size" min="10" max="1000" placeholder="100" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Limit <span class="text-gray-400 font-normal">(1-500, default 50)</span></label>
+                                <input type="number" id="dedup-limit" min="1" max="500" placeholder="50" class="w-full border rounded-lg px-3 py-2 text-sm">
                             </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" id="dedup-skip-liveness" class="rounded">
+                            <label for="dedup-skip-liveness" class="text-sm text-gray-700">Skip liveness check</label>
                         </div>
                         <button onclick="sendDedup()" id="btn-dedup" class="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition">Send</button>
                         <div id="res-dedup" class="mt-2"></div>
@@ -617,16 +626,24 @@ async function sendMultiLiveness() {
 
 // ─── Deduplicate ───
 async function sendDedup() {
+    const fileInput = document.getElementById('dedup-image');
+    if (!fileInput.files.length) { showError('res-dedup', { message: 'Please select an image' }); return; }
+
     setButtonLoading('btn-dedup', true);
     showLoading('res-dedup');
     try {
+        const fd = new FormData();
+        fd.append('image', fileInput.files[0]);
+
         const query = {};
         const t = document.getElementById('dedup-threshold').value;
-        const b = document.getElementById('dedup-batch-size').value;
+        const l = document.getElementById('dedup-limit').value;
+        const s = document.getElementById('dedup-skip-liveness').checked;
         if (t) query.threshold = t;
-        if (b) query.batch_size = b;
+        if (l) query.limit = l;
+        if (s) query.skip_liveness = 'true';
 
-        const { status, elapsed, data } = await apiCall('POST', '/deduplicate', { query });
+        const { status, elapsed, data } = await apiCall('POST', '/deduplicate', { formData: fd, query });
         showResponse('res-dedup', status, elapsed, data);
     } catch (e) { showError('res-dedup', e); }
     setButtonLoading('btn-dedup', false);

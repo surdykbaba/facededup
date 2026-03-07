@@ -537,12 +537,16 @@ class LivenessService:
     def _check_eye_visibility(
         face_crop: np.ndarray, face, min_contrast: float,
     ) -> CheckResult:
-        """Detect sunglasses by analyzing gradient contrast in eye regions.
+        """Detect sunglasses by analyzing eye regions with multiple signals.
 
-        Extracts small patches around each eye landmark and measures
-        gradient magnitude (Sobel). Real uncovered eyes have rich
-        gradients from iris, pupil, eyelid edges. Sunglasses produce
-        uniformly dark regions with very low gradient contrast.
+        Three complementary checks on each eye patch:
+        1. Gradient contrast (Sobel) — real eyes have iris/pupil edges
+        2. Brightness — sunglasses make eye area abnormally dark
+        3. Color uniformity — sunglasses produce uniform tint, real eyes
+           have varied colors (white sclera, colored iris, dark pupil)
+
+        Fails if gradient is low OR brightness is too dark OR color is
+        too uniform — any single signal catching sunglasses is enough.
         """
         if not hasattr(face, "kps") or face.kps is None:
             return CheckResult(
@@ -558,17 +562,18 @@ class LivenessService:
         left_eye = face.kps[0]
         right_eye = face.kps[1]
 
-        # Eye patch size: ~12% of face width
+        # Eye patch size: ~25% of inter-eye distance
         eye_dist = float(np.linalg.norm(left_eye - right_eye))
-        patch_r = max(8, int(eye_dist * 0.25))
+        patch_r = max(10, int(eye_dist * 0.28))
 
         eye_contrasts = []
+        eye_brightness = []
+        eye_color_std = []
+
         for eye in [left_eye, right_eye]:
-            # Convert to face_crop coords
             ex = int(eye[0]) - x_off
             ey = int(eye[1]) - y_off
 
-            # Clamp to crop bounds
             y1 = max(0, ey - patch_r)
             y2 = min(h, ey + patch_r)
             x1 = max(0, ex - patch_r)
@@ -576,28 +581,67 @@ class LivenessService:
 
             if y2 - y1 < 5 or x2 - x1 < 5:
                 eye_contrasts.append(0.0)
+                eye_brightness.append(0.0)
+                eye_color_std.append(0.0)
                 continue
 
             patch = face_crop[y1:y2, x1:x2]
             gray_patch = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
 
-            # Sobel gradient magnitude
+            # 1. Gradient contrast (Sobel)
             gx = cv2.Sobel(gray_patch, cv2.CV_64F, 1, 0, ksize=3)
             gy = cv2.Sobel(gray_patch, cv2.CV_64F, 0, 1, ksize=3)
             mag = np.sqrt(gx ** 2 + gy ** 2)
             eye_contrasts.append(float(np.mean(mag)))
 
+            # 2. Brightness — sunglasses darken the eye area
+            eye_brightness.append(float(np.mean(gray_patch)))
+
+            # 3. Color variety — real eyes have varied colors,
+            #    sunglasses produce uniform tint
+            b, g, r = cv2.split(patch)
+            color_std = float(np.mean([np.std(b), np.std(g), np.std(r)]))
+            eye_color_std.append(color_std)
+
         avg_contrast = float(np.mean(eye_contrasts)) if eye_contrasts else 0.0
-        passed = avg_contrast >= min_contrast
+        avg_brightness = float(np.mean(eye_brightness)) if eye_brightness else 0.0
+        avg_color_std = float(np.mean(eye_color_std)) if eye_color_std else 0.0
+
+        # Compare eye brightness to cheek brightness (forehead region)
+        # Sunglasses create a large brightness drop vs surrounding face
+        cheek_brightness = 128.0  # default
+        nose = face.kps[2]
+        cx = int(nose[0]) - x_off
+        cy = int(nose[1]) - y_off
+        cr = max(8, patch_r // 2)
+        cy1, cy2 = max(0, cy - cr), min(h, cy + cr)
+        cx1, cx2 = max(0, cx - cr), min(w, cx + cr)
+        if cy2 - cy1 > 3 and cx2 - cx1 > 3:
+            cheek_patch = cv2.cvtColor(face_crop[cy1:cy2, cx1:cx2], cv2.COLOR_BGR2GRAY)
+            cheek_brightness = float(np.mean(cheek_patch))
+
+        brightness_ratio = avg_brightness / max(cheek_brightness, 1.0)
+
+        # Sunglasses indicators (any one is enough to fail):
+        # - Low gradient contrast (< min_contrast)
+        # - Eyes much darker than surrounding face (ratio < 0.55)
+        # - Very low color variety in eye region (< 12)
+        gradient_ok = avg_contrast >= min_contrast
+        brightness_ok = brightness_ratio >= 0.55
+        color_ok = avg_color_std >= 12.0
+
+        passed = gradient_ok and brightness_ok and color_ok
 
         return CheckResult(
             name="eye_visibility",
             passed=passed,
             score=round(avg_contrast, 2),
             detail=(
-                f"Eye region gradient: {avg_contrast:.2f} (min: {min_contrast}). "
-                f"Left: {eye_contrasts[0]:.2f}, Right: {eye_contrasts[1]:.2f}. "
-                f"Low values indicate sunglasses or eye covering"
+                f"Eye gradient: {avg_contrast:.2f} (min: {min_contrast}, {'OK' if gradient_ok else 'FAIL'}). "
+                f"Eye/face brightness: {brightness_ratio:.2f} (min: 0.55, {'OK' if brightness_ok else 'FAIL'}). "
+                f"Eye color std: {avg_color_std:.1f} (min: 12, {'OK' if color_ok else 'FAIL'}). "
+                f"L: {eye_contrasts[0]:.1f}/{eye_brightness[0]:.0f}, "
+                f"R: {eye_contrasts[1]:.1f}/{eye_brightness[1]:.0f}"
             ),
             mandatory=True,
         )

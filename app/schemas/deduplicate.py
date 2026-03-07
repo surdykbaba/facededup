@@ -1,20 +1,18 @@
-from pydantic import BaseModel
+from uuid import UUID
+
+from pydantic import BaseModel, Field
 
 
-class RecordSummary(BaseModel):
-    id: str
+class DuplicateResult(BaseModel):
+    record_id: UUID
     name: str | None
     external_id: str | None
-
-
-class DuplicatePair(BaseModel):
-    record_a: RecordSummary
-    record_b: RecordSummary
-    similarity: float
+    similarity: float = Field(ge=0.0, le=1.0)
+    metadata: dict | None
 
 
 class DeduplicateResponse(BaseModel):
-    total_records: int
-    duplicate_pairs: list[DuplicatePair]
-    total_duplicates: int
+    query_face_info: dict
+    duplicates: list[DuplicateResult]
     threshold: float
+    total_duplicates: int

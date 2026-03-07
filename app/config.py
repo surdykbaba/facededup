@@ -98,6 +98,9 @@ class Settings(BaseSettings):
     # Duplicate detection at enrollment
     ENROLL_DEDUP_ENABLED: bool = True
 
+    # Docs page password (set via DOCS_PASSWORD env var to protect the docs page)
+    DOCS_PASSWORD: str = ""
+
     # Storage
     IMAGE_STORAGE_PATH: str = "/data/images"
     MAX_IMAGE_SIZE_MB: int = 10
