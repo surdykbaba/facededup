@@ -19,7 +19,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 3G
+          memory: 4G
 
   postgres:
     image: pgvector/pgvector:pg16
@@ -31,6 +31,8 @@ services:
       POSTGRES_DB: ${DB_NAME}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
       interval: 10s
@@ -41,13 +43,13 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 16G
 
   redis:
     image: redis:7-alpine
     container_name: facededup-redis
     restart: always
-    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s

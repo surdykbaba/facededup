@@ -1,9 +1,10 @@
 import asyncio
 import json
 import logging
+import time
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from insightface.app import FaceAnalysis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +15,7 @@ from app.core.rate_limiter import rate_limit_dependency
 from app.core.security import verify_api_key
 from app.models.face_record import FaceRecord
 from app.schemas.enroll import EnrollResponse
+from app.services.analytics_service import log_event
 from app.services.face_service import FaceService
 from app.services.image_service import save_image, save_spoof_sample, validate_image
 from app.services.liveness_service import LivenessService
@@ -26,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 @router.post("/enroll", response_model=EnrollResponse, status_code=201)
 async def enroll_face(
+    request: Request,
     image: UploadFile = File(..., description="Face image (JPEG/PNG/WebP)"),
     frames: list[UploadFile] | None = File(
         None,
@@ -50,6 +53,7 @@ async def enroll_face(
     For stronger anti-spoof protection, provide additional frames
     for multi-frame active liveness (3-5 total images including primary).
     """
+    start_time = time.time()
     image_bytes = await image.read()
     validate_image(image_bytes)
 
@@ -167,6 +171,18 @@ async def enroll_face(
     await db.flush()
 
     logger.info("Enrolled face record: id=%s name=%s", record.id, record.name)
+
+    duration_ms = int((time.time() - start_time) * 1000)
+    log_event(
+        request,
+        event_type="enroll",
+        status="success",
+        api_key=_api_key,
+        record_id=record.id,
+        external_id=record.external_id,
+        duration_ms=duration_ms,
+        metadata={"liveness_mode": liveness_mode, "has_duplicates": bool(duplicate_info)},
+    )
 
     return EnrollResponse(
         id=record.id,

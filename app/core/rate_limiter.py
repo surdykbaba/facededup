@@ -28,3 +28,32 @@ async def rate_limit_dependency(request: Request) -> None:
             detail="Rate limit exceeded",
             headers={"Retry-After": str(window)},
         )
+
+
+async def batch_rate_limit_dependency(request: Request) -> None:
+    """Separate rate limit for batch/bulk endpoints.
+
+    Allows fewer requests per minute but each can contain up to 1000 records.
+    """
+    redis = request.app.state.redis
+    settings = get_settings()
+
+    identifier = request.headers.get("X-API-Key") or request.client.host
+    key = f"ratelimit:batch:{identifier}"
+    now = time.time()
+    window = settings.BATCH_RATE_LIMIT_WINDOW_SECONDS
+
+    pipe = redis.pipeline()
+    pipe.zremrangebyscore(key, 0, now - window)
+    pipe.zadd(key, {str(now): now})
+    pipe.zcard(key)
+    pipe.expire(key, window)
+    results = await pipe.execute()
+
+    request_count = results[2]
+    if request_count > settings.BATCH_RATE_LIMIT_REQUESTS:
+        raise HTTPException(
+            status_code=429,
+            detail="Batch rate limit exceeded",
+            headers={"Retry-After": str(window)},
+        )

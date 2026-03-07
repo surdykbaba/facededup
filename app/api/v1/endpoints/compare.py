@@ -1,8 +1,9 @@
 import asyncio
 import logging
+import time
 
 import numpy as np
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from insightface.app import FaceAnalysis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,7 @@ from app.core.exceptions import LivenessCheckFailedError
 from app.core.rate_limiter import rate_limit_dependency
 from app.core.security import verify_api_key
 from app.schemas.compare import CompareResponse
+from app.services.analytics_service import log_event
 from app.services.face_service import FaceService
 from app.services.image_service import save_spoof_sample, validate_image
 from app.services.liveness_service import LivenessService
@@ -22,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 @router.post("/compare", response_model=CompareResponse)
 async def compare_faces(
+    request: Request,
     image_a: UploadFile = File(..., description="First face image"),
     image_b: UploadFile = File(..., description="Second face image"),
     threshold: float = Query(
@@ -46,6 +49,7 @@ async def compare_faces(
 
     No database lookup — just a 1:1 face comparison.
     """
+    start_time = time.time()
     settings = get_settings()
     if threshold is None:
         threshold = settings.SIMILARITY_THRESHOLD
@@ -105,6 +109,16 @@ async def compare_faces(
     logger.info(
         "Face comparison: similarity=%.4f match=%s threshold=%.2f",
         similarity, is_match, threshold,
+    )
+
+    duration_ms = int((time.time() - start_time) * 1000)
+    log_event(
+        request,
+        event_type="compare",
+        status="success",
+        api_key=_api_key,
+        duration_ms=duration_ms,
+        metadata={"similarity": similarity, "is_match": is_match, "threshold": threshold},
     )
 
     return CompareResponse(

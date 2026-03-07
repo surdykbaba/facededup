@@ -15,8 +15,8 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://facededup:changeme@postgres:5432/facededup"
-    DB_POOL_SIZE: int = 5
-    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 30
 
     # Redis
     REDIS_URL: str = "redis://redis:6379/0"
@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     # Rate limiting
     RATE_LIMIT_REQUESTS: int = 60
     RATE_LIMIT_WINDOW_SECONDS: int = 60
+
+    # Batch rate limiting (separate limit for bulk endpoints)
+    BATCH_RATE_LIMIT_REQUESTS: int = 10
+    BATCH_RATE_LIMIT_WINDOW_SECONDS: int = 60
+    BATCH_MAX_IMAGES: int = 50           # max images per batch request
+    BATCH_MAX_EMBEDDINGS: int = 1000     # max embeddings per batch request
 
     # Face detection
     FACE_MODEL_NAME: str = "buffalo_l"

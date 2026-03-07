@@ -8,6 +8,7 @@ import pgvector.sqlalchemy  # noqa: F401 - registers vector type
 
 # Import models so metadata includes all tables
 from app.core.database import Base
+from app.models.api_event import ApiEvent  # noqa: F401
 from app.models.face_record import FaceRecord  # noqa: F401
 
 target_metadata = Base.metadata

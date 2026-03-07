@@ -1,9 +1,9 @@
 import os
 
 bind = "0.0.0.0:8000"
-workers = int(os.getenv("WORKERS", 2))
+workers = int(os.getenv("WORKERS", 4))
 worker_class = "uvicorn.workers.UvicornWorker"
-timeout = 120  # Face detection can be slow on CPU
+timeout = 300  # Batch operations and face detection can be slow on CPU
 keepalive = 5
 accesslog = "-"
 errorlog = "-"
