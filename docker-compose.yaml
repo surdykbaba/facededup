@@ -14,6 +14,7 @@ services:
     volumes:
       - ./app:/app/app
       - image-data:/data/images
+      - spoof-data:/data/spoof_samples
     depends_on:
       postgres:
         condition: service_healthy
@@ -51,3 +52,4 @@ services:
 volumes:
   pgdata:
   image-data:
+  spoof-data:

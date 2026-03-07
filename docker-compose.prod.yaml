@@ -8,6 +8,7 @@ services:
     env_file: .env
     volumes:
       - image-data:/data/images
+      - spoof-data:/data/spoof_samples
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,3 +81,4 @@ volumes:
   pgdata:
   redisdata:
   image-data:
+  spoof-data:

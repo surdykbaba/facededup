@@ -13,7 +13,7 @@ from app.core.rate_limiter import rate_limit_dependency
 from app.core.security import verify_api_key
 from app.schemas.compare import CompareResponse
 from app.services.face_service import FaceService
-from app.services.image_service import validate_image
+from app.services.image_service import save_spoof_sample, validate_image
 from app.services.liveness_service import LivenessService
 
 router = APIRouter()
@@ -72,6 +72,7 @@ async def compare_faces(
 
         result_a = liveness_svc.check_liveness_from_face(img_a, face_a, crop_a)
         if not result_a["is_live"]:
+            await save_spoof_sample([bytes_a], result_a, "/compare")
             raise LivenessCheckFailedError(
                 f"Image A failed liveness check "
                 f"(score: {result_a['liveness_score']:.2f}, "
@@ -81,6 +82,7 @@ async def compare_faces(
 
         result_b = liveness_svc.check_liveness_from_face(img_b, face_b, crop_b)
         if not result_b["is_live"]:
+            await save_spoof_sample([bytes_b], result_b, "/compare")
             raise LivenessCheckFailedError(
                 f"Image B failed liveness check "
                 f"(score: {result_b['liveness_score']:.2f}, "

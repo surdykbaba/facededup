@@ -110,6 +110,10 @@ class Settings(BaseSettings):
     IMAGE_STORAGE_PATH: str = "/data/images"
     MAX_IMAGE_SIZE_MB: int = 10
 
+    # Spoof sample collection (for model retraining)
+    SPOOF_SAMPLE_STORAGE_ENABLED: bool = True
+    SPOOF_SAMPLE_STORAGE_PATH: str = "/data/spoof_samples"
+
     # Server
     WORKERS: int = 2
 

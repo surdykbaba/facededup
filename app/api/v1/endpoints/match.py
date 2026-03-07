@@ -12,7 +12,7 @@ from app.core.rate_limiter import rate_limit_dependency
 from app.core.security import verify_api_key
 from app.schemas.match import MatchResponse
 from app.services.face_service import FaceService
-from app.services.image_service import validate_image
+from app.services.image_service import save_spoof_sample, validate_image
 from app.services.liveness_service import LivenessService
 from app.services.match_service import MatchService
 
@@ -69,6 +69,7 @@ async def match_face(
         liveness_info = liveness_svc.check_liveness_from_face(img, face, face_crop)
 
         if not liveness_info["is_live"]:
+            await save_spoof_sample([image_bytes], liveness_info, "/match")
             raise LivenessCheckFailedError(
                 f"Query image failed liveness check "
                 f"(score: {liveness_info['liveness_score']:.2f}, "

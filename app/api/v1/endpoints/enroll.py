@@ -15,7 +15,7 @@ from app.core.security import verify_api_key
 from app.models.face_record import FaceRecord
 from app.schemas.enroll import EnrollResponse
 from app.services.face_service import FaceService
-from app.services.image_service import save_image, validate_image
+from app.services.image_service import save_image, save_spoof_sample, validate_image
 from app.services.liveness_service import LivenessService
 from app.services.match_service import MatchService
 from app.services.multi_frame_liveness_service import MultiFrameLivenessService
@@ -91,6 +91,7 @@ async def enroll_face(
         liveness_mode = "multi_frame"
 
         if not liveness_info["is_live"]:
+            await save_spoof_sample(all_frames_bytes, liveness_info, "/enroll")
             raise LivenessCheckFailedError(
                 f"Multi-frame liveness failed "
                 f"(score: {liveness_info['liveness_score']:.2f}, "
@@ -113,6 +114,7 @@ async def enroll_face(
             liveness_mode = "single_frame"
 
             if not liveness_info["is_live"]:
+                await save_spoof_sample([image_bytes], liveness_info, "/enroll")
                 raise LivenessCheckFailedError(
                     f"Image failed liveness check "
                     f"(score: {liveness_info['liveness_score']:.2f}, "

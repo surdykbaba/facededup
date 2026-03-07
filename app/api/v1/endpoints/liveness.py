@@ -8,7 +8,7 @@ from app.api.deps import get_anti_spoof, get_face_analyzer
 from app.core.rate_limiter import rate_limit_dependency
 from app.core.security import verify_api_key
 from app.schemas.liveness import LivenessResponse
-from app.services.image_service import validate_image
+from app.services.image_service import save_spoof_sample, validate_image
 from app.services.liveness_service import LivenessService
 
 router = APIRouter()
@@ -42,5 +42,8 @@ async def check_liveness(
     result = await loop.run_in_executor(
         None, liveness_svc.check_liveness, image_bytes
     )
+
+    if not result.get("is_live", True):
+        await save_spoof_sample([image_bytes], result, "/liveness")
 
     return LivenessResponse(**result)
