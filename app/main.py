@@ -162,6 +162,18 @@ def create_app() -> FastAPI:
                 return auth_error
         return get_dashboard_html()
 
+    # Events page (password-protected via HTTP Basic Auth)
+    from app.events_page import get_events_html
+
+    @app.get("/events", response_class=HTMLResponse, include_in_schema=False)
+    async def events_page(request: Request):
+        docs_pw = settings.DOCS_PASSWORD
+        if docs_pw:
+            auth_error = _check_basic_auth(request, docs_pw, "FaceDedup Events")
+            if auth_error:
+                return auth_error
+        return get_events_html()
+
     @app.get("/api/v1/postman", include_in_schema=False)
     async def postman_collection():
         """Serve the Postman collection JSON for download."""

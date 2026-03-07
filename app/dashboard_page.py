@@ -31,20 +31,9 @@ def get_dashboard_html() -> str:
         .event-row { cursor: pointer; }
         .event-row:hover { background: #1f2937; }
         .event-row:active { background: #374151; }
-        .table-header { position: sticky; top: 0; background: #111827; z-index: 10; }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #1f2937; }
         ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
-        /* Modal styles */
-        .detail-grid { display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px; align-items: start; }
-        .detail-label { color: #9ca3af; font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; padding-top: 2px; }
-        .detail-value { color: #e5e7eb; font-size: 14px; word-break: break-all; }
-        .error-box { background: #7f1d1d; border: 1px solid #991b1b; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 13px; color: #fca5a5; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
-        .metadata-box { background: #111827; border: 1px solid #374151; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 13px; color: #d1d5db; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
-        .face-image { max-width: 280px; max-height: 280px; border-radius: 8px; border: 1px solid #374151; }
-        .pagination-btn { background: #1f2937; border: 1px solid #374151; border-radius: 6px; padding: 4px 10px; font-size: 12px; color: #9ca3af; cursor: pointer; transition: all 0.15s; }
-        .pagination-btn:hover:not(:disabled) { background: #374151; color: #e5e7eb; }
-        .pagination-btn:disabled { opacity: 0.3; cursor: not-allowed; }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen">
@@ -207,84 +196,25 @@ def get_dashboard_html() -> str:
             </div>
         </div>
 
-        <!-- Recent Events -->
-        <div class="card overflow-hidden">
-            <div class="p-5 border-b border-gray-700">
-                <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-sm font-medium text-gray-300">Recent Events</h3>
-                    <span id="eventsTotal" class="text-xs text-gray-500">-- events</span>
+        <!-- View All Events Link -->
+        <a href="/events" class="card p-5 flex items-center justify-between group hover:border-indigo-500/50 transition block">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-indigo-600/20 rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                    </svg>
                 </div>
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div class="flex gap-2">
-                        <select id="eventTypeFilter" onchange="resetAndRefreshEvents()" class="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-300 outline-none">
-                            <option value="">All Types</option>
-                            <option value="enroll">enroll</option>
-                            <option value="match">match</option>
-                            <option value="deduplicate">deduplicate</option>
-                            <option value="compare">compare</option>
-                            <option value="liveness">liveness</option>
-                            <option value="multi_frame_liveness">multi_frame_liveness</option>
-                            <option value="record_get">record_get</option>
-                            <option value="record_delete">record_delete</option>
-                            <option value="batch_enroll">batch_enroll</option>
-                            <option value="batch_enroll_embeddings">batch_enroll_embeddings</option>
-                        </select>
-                        <select id="statusFilter" onchange="resetAndRefreshEvents()" class="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-300 outline-none">
-                            <option value="">All Statuses</option>
-                            <option value="success">success</option>
-                            <option value="failed">failed</option>
-                            <option value="error">error</option>
-                        </select>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <select id="pageSizeSelect" onchange="changePageSize()" class="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-300 outline-none">
-                            <option value="10">10 / page</option>
-                            <option value="25" selected>25 / page</option>
-                            <option value="50">50 / page</option>
-                            <option value="100">100 / page</option>
-                        </select>
-                        <div class="flex items-center gap-1">
-                            <button id="prevPageBtn" onclick="prevPage()" disabled class="pagination-btn">&#8592; Prev</button>
-                            <span id="pageInfo" class="text-xs text-gray-500 px-2 whitespace-nowrap">Page 1</span>
-                            <button id="nextPageBtn" onclick="nextPage()" disabled class="pagination-btn">Next &#8594;</button>
-                        </div>
-                    </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-200 group-hover:text-white transition">View All Events</p>
+                    <p class="text-xs text-gray-500">Browse, filter, and inspect every API event with full details</p>
                 </div>
             </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead class="table-header">
-                        <tr class="text-left text-xs text-gray-400 uppercase tracking-wider border-b border-gray-700">
-                            <th class="px-5 py-3 font-medium">Time</th>
-                            <th class="px-5 py-3 font-medium">Type</th>
-                            <th class="px-5 py-3 font-medium">Status</th>
-                            <th class="px-5 py-3 font-medium text-right">Duration</th>
-                            <th class="px-5 py-3 font-medium">Record ID</th>
-                            <th class="px-5 py-3 font-medium">Details</th>
-                        </tr>
-                    </thead>
-                    <tbody id="eventsTableBody" class="divide-y divide-gray-800">
-                        <tr><td colspan="6" class="px-5 py-8 text-center text-gray-500">Loading events...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
+            <svg class="w-5 h-5 text-gray-500 group-hover:text-indigo-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+            </svg>
+        </a>
 
     </main>
-
-    <!-- Event Detail Modal -->
-    <div id="eventModal" class="fixed inset-0 z-50 hidden" style="backdrop-filter: blur(2px);">
-        <div class="absolute inset-0 bg-black/60" onclick="closeModal()"></div>
-        <div class="absolute inset-4 sm:inset-8 lg:inset-y-8 lg:inset-x-[15%] bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden flex flex-col">
-            <div class="flex items-center justify-between p-5 border-b border-gray-700 flex-shrink-0">
-                <h3 id="modalTitle" class="text-sm font-medium text-gray-300">Event Detail</h3>
-                <button onclick="closeModal()" class="text-gray-400 hover:text-white text-xl leading-none px-2">&times;</button>
-            </div>
-            <div id="modalContent" class="flex-1 overflow-y-auto p-5 space-y-5">
-                <!-- Populated dynamically -->
-            </div>
-        </div>
-    </div>
 
     <!-- Footer -->
     <footer class="border-t border-gray-800 mt-8">
@@ -299,12 +229,6 @@ def get_dashboard_html() -> str:
 let currentRange = '7d';
 let refreshInterval = null;
 const REFRESH_MS = 30000;
-
-// Pagination state
-let currentPage = 1;
-let currentPageSize = 25;
-let totalEvents = 0;
-let currentEventsData = [];
 
 // Chart instances
 let usageTrendChart = null;
@@ -435,19 +359,17 @@ async function refreshAll() {
 
     const { start, end } = getDateRange();
     const tsInterval = currentRange === '24h' ? 'hour' : 'day';
-    const eventsOffset = (currentPage - 1) * currentPageSize;
 
-    const labels = ['Health', 'Analytics Summary', 'Timeseries', 'Index Status', 'Recent Events'];
-    const [health, summary, timeseries, indexStatus, recentEvents] = await Promise.allSettled([
+    const labels = ['Health', 'Analytics Summary', 'Timeseries', 'Index Status'];
+    const [health, summary, timeseries, indexStatus] = await Promise.allSettled([
         dashApi('GET', '/health'),
         dashApi('GET', '/analytics/summary', { start, end }),
         dashApi('GET', '/analytics/timeseries', { start, end, interval: tsInterval }),
         dashApi('GET', '/admin/index/status'),
-        dashApi('GET', '/analytics/events', { limit: currentPageSize, offset: eventsOffset }),
     ]);
 
     // Collect errors from rejected promises
-    const results = [health, summary, timeseries, indexStatus, recentEvents];
+    const results = [health, summary, timeseries, indexStatus];
     const errors = [];
     results.forEach((r, i) => {
         if (r.status === 'rejected') {
@@ -467,7 +389,6 @@ async function refreshAll() {
     if (summary.status === 'fulfilled') renderSummary(summary.value);
     if (timeseries.status === 'fulfilled') renderTimeseries(timeseries.value);
     if (indexStatus.status === 'fulfilled') renderIndexStatus(indexStatus.value);
-    if (recentEvents.status === 'fulfilled') renderRecentEvents(recentEvents.value);
 
     // Show zeroes instead of '--' when calls succeed but data is empty
     if (summary.status === 'fulfilled' && summary.value.total_events === 0) {
@@ -482,46 +403,6 @@ async function refreshAll() {
     }
 
     document.getElementById('lastRefresh').textContent = 'Last refresh: ' + new Date().toLocaleTimeString();
-}
-
-// ===== Pagination =====
-function resetAndRefreshEvents() {
-    currentPage = 1;
-    refreshEvents();
-}
-
-function changePageSize() {
-    currentPageSize = parseInt(document.getElementById('pageSizeSelect').value, 10);
-    currentPage = 1;
-    refreshEvents();
-}
-
-function prevPage() {
-    if (currentPage > 1) { currentPage--; refreshEvents(); }
-}
-
-function nextPage() {
-    const totalPages = Math.max(1, Math.ceil(totalEvents / currentPageSize));
-    if (currentPage < totalPages) { currentPage++; refreshEvents(); }
-}
-
-async function refreshEvents() {
-    const apiKey = document.getElementById('apiKey').value.trim();
-    if (!apiKey) return;
-    const evtType = document.getElementById('eventTypeFilter').value;
-    const status = document.getElementById('statusFilter').value;
-    const offset = (currentPage - 1) * currentPageSize;
-    try {
-        const data = await dashApi('GET', '/analytics/events', {
-            event_type: evtType,
-            status: status,
-            offset: offset,
-            limit: currentPageSize,
-        });
-        renderRecentEvents(data);
-    } catch (e) {
-        console.error('[Dashboard] refreshEvents failed:', e.message);
-    }
 }
 
 // ===== Render Functions =====
@@ -620,165 +501,6 @@ function renderSummaryTable(byType) {
             <td class="px-5 py-3 text-right text-gray-300">${t.avg_duration_ms ? Math.round(t.avg_duration_ms) + 'ms' : '--'}</td>
         </tr>`;
     }).join('');
-}
-
-function renderRecentEvents(data) {
-    const tbody = document.getElementById('eventsTableBody');
-    totalEvents = data.total || 0;
-    currentEventsData = data.events || [];
-
-    // Update pagination display
-    document.getElementById('eventsTotal').textContent = totalEvents.toLocaleString() + ' events';
-    const totalPages = Math.max(1, Math.ceil(totalEvents / currentPageSize));
-    document.getElementById('pageInfo').textContent = 'Page ' + currentPage + ' of ' + totalPages;
-    document.getElementById('prevPageBtn').disabled = (currentPage <= 1);
-    document.getElementById('nextPageBtn').disabled = (currentPage >= totalPages);
-
-    if (!currentEventsData.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="px-5 py-8 text-center text-gray-500">No events found</td></tr>';
-        return;
-    }
-    tbody.innerHTML = currentEventsData.map((e, idx) => {
-        const time = timeAgo(new Date(e.created_at));
-        const badgeClass = e.status === 'success' ? 'badge-success' : e.status === 'failed' ? 'badge-failed' : 'badge-error';
-        const recId = e.record_id ? e.record_id.substring(0, 8) + '...' : '--';
-        const detail = e.error_detail ? e.error_detail.substring(0, 60) + (e.error_detail.length > 60 ? '...' : '') : (e.metadata ? summarizeMetadata(e.metadata) : '--');
-        return `<tr class="event-row transition" onclick="openEventDetail(${idx})">
-            <td class="px-5 py-2.5 text-gray-400 whitespace-nowrap" title="${new Date(e.created_at).toLocaleString()}">${time}</td>
-            <td class="px-5 py-2.5">
-                <span class="inline-block w-2 h-2 rounded-full mr-1.5" style="background:${TYPE_COLORS[e.event_type] || '#6b7280'}"></span>
-                ${e.event_type}
-            </td>
-            <td class="px-5 py-2.5"><span class="badge ${badgeClass}">${e.status}</span></td>
-            <td class="px-5 py-2.5 text-right text-gray-300">${e.duration_ms ? e.duration_ms + 'ms' : '--'}</td>
-            <td class="px-5 py-2.5 font-mono text-xs text-gray-400">${recId}</td>
-            <td class="px-5 py-2.5 text-xs text-gray-500 max-w-xs truncate">${detail}</td>
-        </tr>`;
-    }).join('');
-}
-
-function summarizeMetadata(meta) {
-    if (!meta || typeof meta !== 'object') return '--';
-    const parts = [];
-    if (meta.match_count !== undefined) parts.push('matches: ' + meta.match_count);
-    if (meta.similarity !== undefined) parts.push('sim: ' + Number(meta.similarity).toFixed(2));
-    if (meta.is_live !== undefined) parts.push(meta.is_live ? 'live' : 'spoof');
-    if (meta.has_duplicates !== undefined) parts.push(meta.has_duplicates ? 'dup found' : 'unique');
-    if (meta.total_success !== undefined) parts.push('ok: ' + meta.total_success);
-    if (meta.total_failed !== undefined) parts.push('fail: ' + meta.total_failed);
-    return parts.length > 0 ? parts.join(', ') : '--';
-}
-
-function timeAgo(date) {
-    const seconds = Math.floor((new Date() - date) / 1000);
-    if (seconds < 60) return seconds + 's ago';
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return minutes + 'm ago';
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return hours + 'h ago';
-    const days = Math.floor(hours / 24);
-    return days + 'd ago';
-}
-
-// ===== Event Detail Modal =====
-
-function openEventDetail(idx) {
-    const e = currentEventsData[idx];
-    if (!e) return;
-
-    const modal = document.getElementById('eventModal');
-    const content = document.getElementById('modalContent');
-    const title = document.getElementById('modalTitle');
-
-    const badgeClass = e.status === 'success' ? 'badge-success' : e.status === 'failed' ? 'badge-failed' : 'badge-error';
-    const color = TYPE_COLORS[e.event_type] || '#6b7280';
-    title.innerHTML = 'Event Detail &mdash; <span class="badge ' + badgeClass + '">' + e.status + '</span>';
-
-    let html = '<div class="detail-grid">';
-    html += detailRow('Event ID', e.id);
-    html += detailRow('Event Type', '<span class="inline-block w-2.5 h-2.5 rounded-full mr-1.5" style="background:' + color + '"></span>' + e.event_type);
-    html += detailRow('Status', '<span class="badge ' + badgeClass + '">' + e.status + '</span>');
-    html += detailRow('Timestamp', new Date(e.created_at).toLocaleString());
-    html += detailRow('Duration', e.duration_ms ? e.duration_ms + ' ms' : '--');
-    html += detailRow('API Key Hash', '<code class="text-xs bg-gray-800 px-1.5 py-0.5 rounded font-mono">' + (e.api_key_hash || '--') + '</code>');
-    html += detailRow('Record ID', e.record_id ? '<code class="text-xs bg-gray-800 px-1.5 py-0.5 rounded font-mono">' + e.record_id + '</code>' : '<span class="text-gray-500">--</span>');
-    html += detailRow('External ID', e.external_id || '<span class="text-gray-500">--</span>');
-    html += '</div>';
-
-    // Error detail section
-    if (e.error_detail) {
-        html += '<div class="mt-5">';
-        html += '<p class="detail-label mb-2">Error Detail</p>';
-        html += '<div class="error-box">' + escapeHtml(e.error_detail) + '</div>';
-        html += '</div>';
-    }
-
-    // Metadata section
-    if (e.metadata && Object.keys(e.metadata).length > 0) {
-        html += '<div class="mt-5">';
-        html += '<p class="detail-label mb-2">Metadata</p>';
-        html += '<div class="metadata-box">' + escapeHtml(JSON.stringify(e.metadata, null, 2)) + '</div>';
-        html += '</div>';
-    }
-
-    // Face image section
-    if (e.record_id) {
-        html += '<div class="mt-5">';
-        html += '<p class="detail-label mb-2">Face Image</p>';
-        html += '<div id="modalImageContainer" class="flex items-center justify-center bg-gray-800/50 rounded-lg p-4 min-h-[100px]">';
-        html += '<div class="spinner"></div><span class="ml-3 text-xs text-gray-500">Loading image...</span>';
-        html += '</div>';
-        html += '</div>';
-    }
-
-    content.innerHTML = html;
-    modal.classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
-
-    // Load image asynchronously
-    if (e.record_id) {
-        loadEventImage(e.record_id);
-    }
-}
-
-async function loadEventImage(recordId) {
-    const container = document.getElementById('modalImageContainer');
-    if (!container) return;
-    try {
-        const apiKey = document.getElementById('apiKey').value.trim();
-        const headers = {};
-        if (apiKey) headers['X-API-Key'] = apiKey;
-        const resp = await fetch(window.location.origin + '/api/v1/records/' + recordId + '/image', { headers });
-        if (!resp.ok) {
-            container.innerHTML = '<span class="text-xs text-gray-500">Image not available (record may have been deleted)</span>';
-            return;
-        }
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
-        container.innerHTML = '<img src="' + url + '" class="face-image" alt="Face image" onload="URL.revokeObjectURL(this.src)">';
-    } catch (err) {
-        container.innerHTML = '<span class="text-xs text-red-400">Failed to load image</span>';
-    }
-}
-
-function closeModal() {
-    document.getElementById('eventModal').classList.add('hidden');
-    document.getElementById('modalContent').innerHTML = '';
-    document.body.style.overflow = '';
-}
-
-document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeModal();
-});
-
-function detailRow(label, value) {
-    return '<span class="detail-label">' + label + '</span><span class="detail-value">' + value + '</span>';
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
 }
 
 // ===== Chart Init =====
