@@ -29,14 +29,14 @@ class Settings(BaseSettings):
         return [k.strip() for k in self.API_KEYS.split(",") if k.strip()]
 
     # Rate limiting
-    RATE_LIMIT_REQUESTS: int = 60
+    RATE_LIMIT_REQUESTS: int = 300
     RATE_LIMIT_WINDOW_SECONDS: int = 60
 
     # Batch rate limiting (separate limit for bulk endpoints)
-    BATCH_RATE_LIMIT_REQUESTS: int = 10
+    BATCH_RATE_LIMIT_REQUESTS: int = 100
     BATCH_RATE_LIMIT_WINDOW_SECONDS: int = 60
-    BATCH_MAX_IMAGES: int = 50           # max images per batch request
-    BATCH_MAX_EMBEDDINGS: int = 1000     # max embeddings per batch request
+    BATCH_MAX_IMAGES: int = 500          # max images per batch request
+    BATCH_MAX_EMBEDDINGS: int = 5000     # max embeddings per batch request
 
     # Face detection
     FACE_MODEL_NAME: str = "buffalo_l"
