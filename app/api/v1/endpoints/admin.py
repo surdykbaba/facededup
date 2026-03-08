@@ -146,35 +146,46 @@ async def purge_all_records(
 
     logger.warning("PURGE: Deleting ALL face records and images")
 
-    raw_conn = await db.connection()
-    await raw_conn.execution_options(isolation_level="AUTOCOMMIT")
+    # Use the engine directly for DDL — each statement gets its own connection
+    # to avoid issues with AUTOCOMMIT + multiple DDL statements.
+    from app.core.database import create_db_engine
 
-    # 1. Drop index first (faster truncate)
-    await raw_conn.execute(
-        text("DROP INDEX IF EXISTS ix_face_records_embedding_hnsw")
-    )
-    logger.info("PURGE: HNSW index dropped")
+    engine = create_db_engine()
+    try:
+        # 1. Drop index
+        async with engine.connect() as conn:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
+            await conn.execute(
+                text("DROP INDEX IF EXISTS ix_face_records_embedding_hnsw")
+            )
+        logger.info("PURGE: HNSW index dropped")
 
-    # 2. Truncate table (much faster than DELETE for large tables)
-    await raw_conn.execute(text("TRUNCATE TABLE face_records"))
-    logger.info("PURGE: face_records table truncated")
+        # 2. Truncate table
+        async with engine.connect() as conn:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
+            await conn.execute(text("TRUNCATE TABLE face_records"))
+        logger.info("PURGE: face_records table truncated")
 
-    # 3. Remove image files
-    image_dir = Path(settings.IMAGE_STORAGE_PATH)
-    removed_count = 0
-    if image_dir.exists():
-        for child in image_dir.iterdir():
-            if child.is_dir():
-                shutil.rmtree(child, ignore_errors=True)
-                removed_count += 1
-            elif child.is_file():
-                child.unlink(missing_ok=True)
-                removed_count += 1
-    logger.info("PURGE: Removed %d items from %s", removed_count, image_dir)
+        # 3. Remove image files
+        image_dir = Path(settings.IMAGE_STORAGE_PATH)
+        removed_count = 0
+        if image_dir.exists():
+            for child in image_dir.iterdir():
+                if child.is_dir():
+                    shutil.rmtree(child, ignore_errors=True)
+                    removed_count += 1
+                elif child.is_file():
+                    child.unlink(missing_ok=True)
+                    removed_count += 1
+        logger.info("PURGE: Removed %d items from %s", removed_count, image_dir)
 
-    # 4. Vacuum to reclaim space
-    await raw_conn.execute(text("VACUUM FULL face_records"))
-    logger.info("PURGE: VACUUM FULL completed")
+        # 4. Vacuum to reclaim space
+        async with engine.connect() as conn:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
+            await conn.execute(text("VACUUM FULL face_records"))
+        logger.info("PURGE: VACUUM FULL completed")
+    finally:
+        await engine.dispose()
 
     return {
         "status": "purged",
