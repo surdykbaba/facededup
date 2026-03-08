@@ -30,6 +30,15 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
+            echo "=== Updating .env rate limits ==="
+            sed -i 's/^RATE_LIMIT_REQUESTS=.*/RATE_LIMIT_REQUESTS=300/' .env
+            sed -i 's/^RATE_LIMIT_WINDOW_SECONDS=.*/RATE_LIMIT_WINDOW_SECONDS=60/' .env
+            grep -q '^BATCH_RATE_LIMIT_REQUESTS=' .env && sed -i 's/^BATCH_RATE_LIMIT_REQUESTS=.*/BATCH_RATE_LIMIT_REQUESTS=100/' .env || echo 'BATCH_RATE_LIMIT_REQUESTS=100' >> .env
+            grep -q '^BATCH_RATE_LIMIT_WINDOW_SECONDS=' .env && sed -i 's/^BATCH_RATE_LIMIT_WINDOW_SECONDS=.*/BATCH_RATE_LIMIT_WINDOW_SECONDS=60/' .env || echo 'BATCH_RATE_LIMIT_WINDOW_SECONDS=60' >> .env
+            grep -q '^BATCH_MAX_IMAGES=' .env && sed -i 's/^BATCH_MAX_IMAGES=.*/BATCH_MAX_IMAGES=500/' .env || echo 'BATCH_MAX_IMAGES=500' >> .env
+            grep -q '^BATCH_MAX_EMBEDDINGS=' .env && sed -i 's/^BATCH_MAX_EMBEDDINGS=.*/BATCH_MAX_EMBEDDINGS=5000/' .env || echo 'BATCH_MAX_EMBEDDINGS=5000' >> .env
+            cat .env | grep -E 'RATE_LIMIT|BATCH'
+
             echo "=== Building Docker images ==="
             docker compose -f docker-compose.prod.yaml build
 
