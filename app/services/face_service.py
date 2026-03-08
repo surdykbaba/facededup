@@ -25,10 +25,10 @@ class FaceService:
             raise InvalidImageError("Could not decode image data")
 
         h, w = img.shape[:2]
-        max_dim = 1280
+        max_dim = 640  # Keep close to det_size to avoid wasted resize
         if max(h, w) > max_dim:
             scale = max_dim / max(h, w)
-            img = cv2.resize(img, (int(w * scale), int(h * scale)))
+            img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
         return img
 
     def _get_single_face(self, img: np.ndarray):

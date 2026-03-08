@@ -3,6 +3,7 @@ import json
 import logging
 import time
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from insightface.app import FaceAnalysis
@@ -146,9 +147,20 @@ async def enroll_face(
             }
 
     record_id = uuid.uuid4()
+    now = datetime.now(timezone.utc)
 
-    # Save image to disk
-    image_path = await save_image(image_bytes, record_id)
+    # Compute image path deterministically — save in background
+    settings_obj = get_settings()
+    sub_dir = str(record_id)[:2]
+    fmt = "jpeg"  # Default; already validated above
+    for sig, f in [(b"\xff\xd8\xff", "jpeg"), (b"\x89PNG", "png"), (b"RIFF", "webp")]:
+        if image_bytes[:len(sig)] == sig:
+            fmt = f
+            break
+    image_path = f"{sub_dir}/{record_id}.{fmt}"
+
+    # Fire-and-forget image save (non-blocking)
+    asyncio.create_task(save_image(image_bytes, record_id))
 
     # Parse metadata JSON
     parsed_metadata = {}
@@ -158,7 +170,7 @@ async def enroll_face(
         except json.JSONDecodeError:
             parsed_metadata = {"raw": metadata}
 
-    # Create DB record
+    # Create DB record (set created_at in Python to avoid flush() round-trip)
     record = FaceRecord(
         id=record_id,
         name=name,
@@ -166,9 +178,9 @@ async def enroll_face(
         metadata_=parsed_metadata,
         embedding=embedding.tolist(),
         image_path=image_path,
+        created_at=now,
     )
     db.add(record)
-    await db.flush()
 
     logger.info("Enrolled face record: id=%s name=%s", record.id, record.name)
 
@@ -192,5 +204,5 @@ async def enroll_face(
         liveness_info=liveness_info,
         liveness_mode=liveness_mode,
         duplicate_info=duplicate_info,
-        created_at=record.created_at,
+        created_at=now,
     )

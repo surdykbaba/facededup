@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import os
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -71,7 +72,12 @@ async def lifespan(app: FastAPI):
 
     # 1. Load InsightFace model (auto-detect GPU)
     providers = _detect_providers()
-    logger.info("Loading face model: %s (providers: %s)", settings.FACE_MODEL_NAME, providers)
+    omp_threads = os.environ.get("OMP_NUM_THREADS", "not set")
+    logger.info(
+        "Loading face model: %s (providers: %s, OMP_NUM_THREADS=%s, det_size=%s)",
+        settings.FACE_MODEL_NAME, providers, omp_threads, settings.det_size_tuple,
+    )
+
     face_analyzer = FaceAnalysis(
         name=settings.FACE_MODEL_NAME,
         providers=providers,

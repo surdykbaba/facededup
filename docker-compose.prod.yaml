@@ -6,6 +6,11 @@ services:
     container_name: facededup-api
     restart: always
     env_file: .env
+    environment:
+      # Thread limits — prevent ONNX workers from spawning threads for all cores
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
+      - OPENBLAS_NUM_THREADS=${OMP_NUM_THREADS:-4}
+      - MKL_NUM_THREADS=${OMP_NUM_THREADS:-4}
     volumes:
       - image-data:/data/images
       - spoof-data:/data/spoof_samples

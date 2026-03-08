@@ -15,8 +15,8 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://facededup:changeme@postgres:5432/facededup"
-    DB_POOL_SIZE: int = 50
-    DB_MAX_OVERFLOW: int = 25
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 10
 
     # Redis
     REDIS_URL: str = "redis://redis:6379/0"
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     # Face detection
     FACE_MODEL_NAME: str = "buffalo_l"
-    FACE_DET_SIZE: str = "640,640"
+    FACE_DET_SIZE: str = "320,320"
     SIMILARITY_THRESHOLD: float = 0.6
 
     @property
@@ -121,7 +121,7 @@ class Settings(BaseSettings):
     SPOOF_SAMPLE_STORAGE_PATH: str = "/data/spoof_samples"
 
     # Server
-    WORKERS: int = 2
+    WORKERS: int = 3
 
 
 @lru_cache
