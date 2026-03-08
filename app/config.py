@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     # Face detection
     FACE_MODEL_NAME: str = "buffalo_l"
     FACE_DET_SIZE: str = "640,640"
-    SIMILARITY_THRESHOLD: float = 0.4
+    SIMILARITY_THRESHOLD: float = 0.6
 
     @property
     def det_size_tuple(self) -> tuple[int, int]:

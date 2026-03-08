@@ -47,7 +47,9 @@ jobs:
             grep -q '^MULTIFRAME_ENROLL_REQUIRED=' .env && sed -i 's/^MULTIFRAME_ENROLL_REQUIRED=.*/MULTIFRAME_ENROLL_REQUIRED=False/' .env || echo 'MULTIFRAME_ENROLL_REQUIRED=False' >> .env
             grep -q '^ANTISPOOF_ENABLED=' .env && sed -i 's/^ANTISPOOF_ENABLED=.*/ANTISPOOF_ENABLED=False/' .env || echo 'ANTISPOOF_ENABLED=False' >> .env
             grep -q '^ENROLL_DEDUP_ENABLED=' .env && sed -i 's/^ENROLL_DEDUP_ENABLED=.*/ENROLL_DEDUP_ENABLED=False/' .env || echo 'ENROLL_DEDUP_ENABLED=False' >> .env
-            cat .env | grep -E 'RATE_LIMIT|BATCH|WORKERS|POOL|LIVENESS|ANTISPOOF|DEDUP'
+            # Similarity threshold for dedup matching
+            grep -q '^SIMILARITY_THRESHOLD=' .env && sed -i 's/^SIMILARITY_THRESHOLD=.*/SIMILARITY_THRESHOLD=0.6/' .env || echo 'SIMILARITY_THRESHOLD=0.6' >> .env
+            cat .env | grep -E 'RATE_LIMIT|BATCH|WORKERS|POOL|LIVENESS|ANTISPOOF|DEDUP|SIMILARITY'
 
             echo "=== Building Docker images ==="
             docker compose -f docker-compose.prod.yaml build
