@@ -160,11 +160,12 @@ async def purge_all_records(
             )
         logger.info("PURGE: HNSW index dropped")
 
-        # 2. Truncate table
+        # 2. Truncate tables (face records + analytics events)
         async with engine.connect() as conn:
             await conn.execution_options(isolation_level="AUTOCOMMIT")
             await conn.execute(text("TRUNCATE TABLE face_records"))
-        logger.info("PURGE: face_records table truncated")
+            await conn.execute(text("TRUNCATE TABLE api_events"))
+        logger.info("PURGE: face_records and api_events tables truncated")
 
         # 3. Remove image files
         image_dir = Path(settings.IMAGE_STORAGE_PATH)
@@ -183,6 +184,7 @@ async def purge_all_records(
         async with engine.connect() as conn:
             await conn.execution_options(isolation_level="AUTOCOMMIT")
             await conn.execute(text("VACUUM FULL face_records"))
+            await conn.execute(text("VACUUM FULL api_events"))
         logger.info("PURGE: VACUUM FULL completed")
     finally:
         await engine.dispose()
