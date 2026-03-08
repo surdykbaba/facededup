@@ -15,8 +15,8 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://facededup:changeme@postgres:5432/facededup"
-    DB_POOL_SIZE: int = 20
-    DB_MAX_OVERFLOW: int = 30
+    DB_POOL_SIZE: int = 50
+    DB_MAX_OVERFLOW: int = 25
 
     # Redis
     REDIS_URL: str = "redis://redis:6379/0"

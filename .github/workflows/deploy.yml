@@ -39,7 +39,15 @@ jobs:
             grep -q '^BATCH_MAX_EMBEDDINGS=' .env && sed -i 's/^BATCH_MAX_EMBEDDINGS=.*/BATCH_MAX_EMBEDDINGS=5000/' .env || echo 'BATCH_MAX_EMBEDDINGS=5000' >> .env
             sed -i 's/^WORKERS=.*/WORKERS=8/' .env
             grep -q '^WORKERS=' .env || echo 'WORKERS=8' >> .env
-            cat .env | grep -E 'RATE_LIMIT|BATCH|WORKERS'
+            # DB pool for concurrent workers
+            grep -q '^DB_POOL_SIZE=' .env && sed -i 's/^DB_POOL_SIZE=.*/DB_POOL_SIZE=50/' .env || echo 'DB_POOL_SIZE=50' >> .env
+            grep -q '^DB_MAX_OVERFLOW=' .env && sed -i 's/^DB_MAX_OVERFLOW=.*/DB_MAX_OVERFLOW=25/' .env || echo 'DB_MAX_OVERFLOW=25' >> .env
+            # Disable expensive checks for bulk enrollment
+            grep -q '^LIVENESS_ENROLL_REQUIRED=' .env && sed -i 's/^LIVENESS_ENROLL_REQUIRED=.*/LIVENESS_ENROLL_REQUIRED=False/' .env || echo 'LIVENESS_ENROLL_REQUIRED=False' >> .env
+            grep -q '^MULTIFRAME_ENROLL_REQUIRED=' .env && sed -i 's/^MULTIFRAME_ENROLL_REQUIRED=.*/MULTIFRAME_ENROLL_REQUIRED=False/' .env || echo 'MULTIFRAME_ENROLL_REQUIRED=False' >> .env
+            grep -q '^ANTISPOOF_ENABLED=' .env && sed -i 's/^ANTISPOOF_ENABLED=.*/ANTISPOOF_ENABLED=False/' .env || echo 'ANTISPOOF_ENABLED=False' >> .env
+            grep -q '^ENROLL_DEDUP_ENABLED=' .env && sed -i 's/^ENROLL_DEDUP_ENABLED=.*/ENROLL_DEDUP_ENABLED=False/' .env || echo 'ENROLL_DEDUP_ENABLED=False' >> .env
+            cat .env | grep -E 'RATE_LIMIT|BATCH|WORKERS|POOL|LIVENESS|ANTISPOOF|DEDUP'
 
             echo "=== Building Docker images ==="
             docker compose -f docker-compose.prod.yaml build
