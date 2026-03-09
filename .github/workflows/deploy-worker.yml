@@ -103,8 +103,8 @@ jobs:
             grep -q '^BATCH_RATE_LIMIT_REQUESTS=' .env && sed -i 's/^BATCH_RATE_LIMIT_REQUESTS=.*/BATCH_RATE_LIMIT_REQUESTS=1000/' .env || echo 'BATCH_RATE_LIMIT_REQUESTS=1000' >> .env
             grep -q '^BATCH_MAX_EMBEDDINGS=' .env && sed -i 's/^BATCH_MAX_EMBEDDINGS=.*/BATCH_MAX_EMBEDDINGS=5000/' .env || echo 'BATCH_MAX_EMBEDDINGS=5000' >> .env
 
-            # 35 workers × 2 ONNX threads = 70 cores
-            grep -q '^WORKERS=' .env && sed -i 's/^WORKERS=.*/WORKERS=35/' .env || echo 'WORKERS=35' >> .env
+            # Start with 5 workers for initial verification, scale up later
+            grep -q '^WORKERS=' .env && sed -i 's/^WORKERS=.*/WORKERS=5/' .env || echo 'WORKERS=5' >> .env
             grep -q '^DB_POOL_SIZE=' .env && sed -i 's/^DB_POOL_SIZE=.*/DB_POOL_SIZE=5/' .env || echo 'DB_POOL_SIZE=5' >> .env
             grep -q '^DB_MAX_OVERFLOW=' .env && sed -i 's/^DB_MAX_OVERFLOW=.*/DB_MAX_OVERFLOW=3/' .env || echo 'DB_MAX_OVERFLOW=3' >> .env
             grep -q '^OMP_NUM_THREADS=' .env && sed -i 's/^OMP_NUM_THREADS=.*/OMP_NUM_THREADS=2/' .env || echo 'OMP_NUM_THREADS=2' >> .env
@@ -161,28 +161,34 @@ jobs:
             echo "=== Starting worker services ==="
             $DC -f docker-compose.worker.yaml up -d --remove-orphans
 
-            echo "=== Waiting for API to be healthy (35 workers loading models ~3-5 min) ==="
-            for i in $(seq 1 150); do
-              HEALTH=$(curl -sf --max-time 10 http://localhost/api/v1/health 2>&1) && {
+            echo "=== Container status after start ==="
+            $DC -f docker-compose.worker.yaml ps 2>/dev/null || true
+
+            echo "=== Waiting for API to be healthy (5 workers loading models ~1 min) ==="
+            for i in $(seq 1 90); do
+              HEALTH=$(curl -sf --max-time 5 http://localhost/api/v1/health 2>&1) && {
                 echo "Worker API is healthy after $((i * 2)) seconds!"
                 echo "$HEALTH" | python3 -m json.tool 2>/dev/null || echo "$HEALTH"
                 break
               }
-              # Show progress every 30 seconds
-              if [ $((i % 15)) -eq 0 ]; then
-                echo "Still waiting... ${i}/${150} checks ($(($i * 2))s elapsed)"
-                curl -sf --max-time 5 http://localhost/api/v1/health 2>&1 || echo "Health check returned non-zero"
+              # Show progress and diagnostics every 20 seconds
+              if [ $((i % 10)) -eq 0 ]; then
+                echo "--- Check $i/90 ($(($i * 2))s) ---"
+                $DC -f docker-compose.worker.yaml ps 2>/dev/null || true
+                $DC -f docker-compose.worker.yaml logs --tail=5 api 2>/dev/null || true
               fi
-              if [ "$i" -eq 150 ]; then
-                echo "ERROR: Worker API failed health check after 300 seconds"
+              if [ "$i" -eq 90 ]; then
+                echo "ERROR: Worker API failed health check after 180 seconds"
                 echo "=== Last health check attempt ==="
-                curl -v --max-time 10 http://localhost/api/v1/health 2>&1 || true
+                curl -v --max-time 5 http://localhost/api/v1/health 2>&1 || true
                 echo "=== Container status ==="
                 $DC -f docker-compose.worker.yaml ps 2>/dev/null || true
-                echo "=== API logs (last 50 lines) ==="
-                $DC -f docker-compose.worker.yaml logs --tail=50 api 2>/dev/null || true
+                echo "=== API logs (last 80 lines) ==="
+                $DC -f docker-compose.worker.yaml logs --tail=80 api 2>/dev/null || true
                 echo "=== Nginx logs ==="
                 $DC -f docker-compose.worker.yaml logs --tail=20 nginx 2>/dev/null || true
+                echo "=== System memory ==="
+                free -h 2>/dev/null || true
                 exit 1
               fi
               sleep 2
