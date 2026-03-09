@@ -37,10 +37,11 @@ jobs:
             grep -q '^BATCH_RATE_LIMIT_WINDOW_SECONDS=' .env && sed -i 's/^BATCH_RATE_LIMIT_WINDOW_SECONDS=.*/BATCH_RATE_LIMIT_WINDOW_SECONDS=60/' .env || echo 'BATCH_RATE_LIMIT_WINDOW_SECONDS=60' >> .env
             grep -q '^BATCH_MAX_IMAGES=' .env && sed -i 's/^BATCH_MAX_IMAGES=.*/BATCH_MAX_IMAGES=500/' .env || echo 'BATCH_MAX_IMAGES=500' >> .env
             grep -q '^BATCH_MAX_EMBEDDINGS=' .env && sed -i 's/^BATCH_MAX_EMBEDDINGS=.*/BATCH_MAX_EMBEDDINGS=5000/' .env || echo 'BATCH_MAX_EMBEDDINGS=5000' >> .env
-            # 80-core server: 35 workers × 2 ONNX threads = 70 cores (10 left for OS/nginx/pg)
-            sed -i 's/^WORKERS=.*/WORKERS=35/' .env
-            grep -q '^WORKERS=' .env || echo 'WORKERS=35' >> .env
-            # DB pool: 35 workers × (3 pool + 1 overflow) = 140 connections per server (280 total for 2 servers, within pg max 800)
+            # Server 1 also runs PostgreSQL + Redis + nginx LB — give them CPU headroom
+            # 15 workers × 2 ONNX threads = 30 cores API, ~30 cores for PG/Redis/nginx/OS
+            sed -i 's/^WORKERS=.*/WORKERS=15/' .env
+            grep -q '^WORKERS=' .env || echo 'WORKERS=15' >> .env
+            # DB pool: 15 workers × (3 pool + 1 overflow) = 60 connections
             grep -q '^DB_POOL_SIZE=' .env && sed -i 's/^DB_POOL_SIZE=.*/DB_POOL_SIZE=3/' .env || echo 'DB_POOL_SIZE=3' >> .env
             grep -q '^DB_MAX_OVERFLOW=' .env && sed -i 's/^DB_MAX_OVERFLOW=.*/DB_MAX_OVERFLOW=1/' .env || echo 'DB_MAX_OVERFLOW=1' >> .env
             # 2 ONNX threads per worker — maximizes worker count on 80 cores
