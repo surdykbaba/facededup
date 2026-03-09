@@ -75,12 +75,32 @@ def log_event(
     duration_ms: int | None = None,
     error_detail: str | None = None,
     metadata: dict | None = None,
+    session: "AsyncSession | None" = None,
 ) -> None:
-    """Fire-and-forget analytics logging. Safe to call from any endpoint.
+    """Analytics logging. Safe to call from any endpoint.
 
-    Uses asyncio.create_task to run the DB insert in the background.
-    The request handler returns immediately without waiting.
+    If *session* is provided the event is added to that transaction (inline,
+    no extra connection). Otherwise falls back to fire-and-forget via
+    asyncio.create_task with its own session.
     """
+    if session is not None:
+        # Inline: piggyback on the caller's transaction — zero extra connections.
+        try:
+            event = ApiEvent(
+                event_type=event_type,
+                status=status,
+                api_key_hash=_hash_api_key(api_key) if api_key else "unknown",
+                record_id=record_id,
+                external_id=external_id,
+                duration_ms=duration_ms,
+                error_detail=str(error_detail)[:2000] if error_detail else None,
+                metadata_=metadata,
+            )
+            session.add(event)
+        except Exception:
+            logger.warning("Failed to add inline analytics event (non-fatal)", exc_info=True)
+        return
+
     session_factory = request.app.state.async_session
     asyncio.create_task(
         _persist_event(

@@ -105,8 +105,8 @@ jobs:
 
             # 35 workers × 2 ONNX threads = 70 cores
             grep -q '^WORKERS=' .env && sed -i 's/^WORKERS=.*/WORKERS=35/' .env || echo 'WORKERS=35' >> .env
-            grep -q '^DB_POOL_SIZE=' .env && sed -i 's/^DB_POOL_SIZE=.*/DB_POOL_SIZE=5/' .env || echo 'DB_POOL_SIZE=5' >> .env
-            grep -q '^DB_MAX_OVERFLOW=' .env && sed -i 's/^DB_MAX_OVERFLOW=.*/DB_MAX_OVERFLOW=3/' .env || echo 'DB_MAX_OVERFLOW=3' >> .env
+            grep -q '^DB_POOL_SIZE=' .env && sed -i 's/^DB_POOL_SIZE=.*/DB_POOL_SIZE=3/' .env || echo 'DB_POOL_SIZE=3' >> .env
+            grep -q '^DB_MAX_OVERFLOW=' .env && sed -i 's/^DB_MAX_OVERFLOW=.*/DB_MAX_OVERFLOW=1/' .env || echo 'DB_MAX_OVERFLOW=1' >> .env
             grep -q '^OMP_NUM_THREADS=' .env && sed -i 's/^OMP_NUM_THREADS=.*/OMP_NUM_THREADS=2/' .env || echo 'OMP_NUM_THREADS=2' >> .env
             grep -q '^FACE_DET_SIZE=' .env && sed -i 's/^FACE_DET_SIZE=.*/FACE_DET_SIZE=320,320/' .env || echo 'FACE_DET_SIZE=320,320' >> .env
 

@@ -40,9 +40,9 @@ jobs:
             # 80-core server: 35 workers × 2 ONNX threads = 70 cores (10 left for OS/nginx/pg)
             sed -i 's/^WORKERS=.*/WORKERS=35/' .env
             grep -q '^WORKERS=' .env || echo 'WORKERS=35' >> .env
-            # DB pool: 35 workers × (5 pool + 3 overflow) = 280 connections (within pg max 500)
-            grep -q '^DB_POOL_SIZE=' .env && sed -i 's/^DB_POOL_SIZE=.*/DB_POOL_SIZE=5/' .env || echo 'DB_POOL_SIZE=5' >> .env
-            grep -q '^DB_MAX_OVERFLOW=' .env && sed -i 's/^DB_MAX_OVERFLOW=.*/DB_MAX_OVERFLOW=3/' .env || echo 'DB_MAX_OVERFLOW=3' >> .env
+            # DB pool: 35 workers × (3 pool + 1 overflow) = 140 connections per server (280 total for 2 servers, within pg max 800)
+            grep -q '^DB_POOL_SIZE=' .env && sed -i 's/^DB_POOL_SIZE=.*/DB_POOL_SIZE=3/' .env || echo 'DB_POOL_SIZE=3' >> .env
+            grep -q '^DB_MAX_OVERFLOW=' .env && sed -i 's/^DB_MAX_OVERFLOW=.*/DB_MAX_OVERFLOW=1/' .env || echo 'DB_MAX_OVERFLOW=1' >> .env
             # 2 ONNX threads per worker — maximizes worker count on 80 cores
             grep -q '^OMP_NUM_THREADS=' .env && sed -i 's/^OMP_NUM_THREADS=.*/OMP_NUM_THREADS=2/' .env || echo 'OMP_NUM_THREADS=2' >> .env
             # Faster detection for bulk enrollment (320x320 vs 640x640 = ~4x faster)

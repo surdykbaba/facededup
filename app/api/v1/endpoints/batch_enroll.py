@@ -154,6 +154,7 @@ async def batch_enroll_images(
             "total_success": total_success,
             "total_failed": total_failed,
         },
+        session=db,
     )
 
     return BatchImageEnrollResponse(
@@ -263,6 +264,7 @@ async def batch_enroll_embeddings(
             "total_failed": total_failed,
             "job_id": job_id,
         },
+        session=db,
     )
 
     return BatchEmbeddingEnrollResponse(

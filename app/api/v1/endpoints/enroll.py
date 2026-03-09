@@ -194,6 +194,7 @@ async def enroll_face(
         external_id=record.external_id,
         duration_ms=duration_ms,
         metadata={"liveness_mode": liveness_mode, "has_duplicates": bool(duplicate_info)},
+        session=db,
     )
 
     return EnrollResponse(

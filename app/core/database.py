@@ -14,6 +14,9 @@ def create_db_engine():
         settings.DATABASE_URL,
         pool_size=settings.DB_POOL_SIZE,
         max_overflow=settings.DB_MAX_OVERFLOW,
+        pool_pre_ping=True,       # detect stale connections (critical for remote DB)
+        pool_timeout=10,          # fail fast instead of waiting 30s for a connection
+        pool_recycle=300,         # recycle connections every 5 min (network resilience)
         echo=settings.DEBUG,
     )
 
