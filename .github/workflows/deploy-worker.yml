@@ -48,6 +48,19 @@ jobs:
               echo "Port 80 freed"
             fi
 
+            # Open firewall for load balancer traffic from Server 1
+            echo "=== Opening firewall for Server 1 (load balancer) ==="
+            if command -v ufw &> /dev/null && run_sudo ufw status | grep -q "active"; then
+              run_sudo ufw allow from 10.8.1.10 to any port 80 proto tcp comment "Server 1 LB" 2>/dev/null || true
+              run_sudo ufw allow from 10.8.1.10 to any port 8000 proto tcp comment "Server 1 LB direct" 2>/dev/null || true
+              run_sudo ufw reload 2>/dev/null || true
+              echo "UFW rules added"
+            fi
+            # Also set iptables directly in case ufw is not managing rules
+            run_sudo iptables -C INPUT -p tcp --dport 80 -s 10.8.1.10 -j ACCEPT 2>/dev/null || \
+              run_sudo iptables -I INPUT 1 -p tcp --dport 80 -s 10.8.1.10 -j ACCEPT 2>/dev/null || true
+            echo "Firewall configured for port 80 from 10.8.1.10"
+
             # Install Docker if not present
             if ! command -v docker &> /dev/null; then
               echo "=== Installing Docker ==="
