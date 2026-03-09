@@ -37,6 +37,17 @@ jobs:
               echo "$SUDO_PASS" | sudo -S "$@"
             }
 
+            # Stop any existing web server using port 80
+            if run_sudo lsof -i :80 &> /dev/null 2>&1 || true; then
+              echo "=== Freeing port 80 ==="
+              run_sudo systemctl stop apache2 2>/dev/null || true
+              run_sudo systemctl disable apache2 2>/dev/null || true
+              run_sudo systemctl stop nginx 2>/dev/null || true
+              run_sudo systemctl disable nginx 2>/dev/null || true
+              run_sudo fuser -k 80/tcp 2>/dev/null || true
+              echo "Port 80 freed"
+            fi
+
             # Install Docker if not present
             if ! command -v docker &> /dev/null; then
               echo "=== Installing Docker ==="
