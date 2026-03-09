@@ -24,7 +24,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 32G
+          memory: 48G
 
   postgres:
     image: pgvector/pgvector:pg16

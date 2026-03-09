@@ -37,14 +37,14 @@ jobs:
             grep -q '^BATCH_RATE_LIMIT_WINDOW_SECONDS=' .env && sed -i 's/^BATCH_RATE_LIMIT_WINDOW_SECONDS=.*/BATCH_RATE_LIMIT_WINDOW_SECONDS=60/' .env || echo 'BATCH_RATE_LIMIT_WINDOW_SECONDS=60' >> .env
             grep -q '^BATCH_MAX_IMAGES=' .env && sed -i 's/^BATCH_MAX_IMAGES=.*/BATCH_MAX_IMAGES=500/' .env || echo 'BATCH_MAX_IMAGES=500' >> .env
             grep -q '^BATCH_MAX_EMBEDDINGS=' .env && sed -i 's/^BATCH_MAX_EMBEDDINGS=.*/BATCH_MAX_EMBEDDINGS=5000/' .env || echo 'BATCH_MAX_EMBEDDINGS=5000' >> .env
-            # Fewer workers = less CPU contention for ONNX inference
-            sed -i 's/^WORKERS=.*/WORKERS=3/' .env
-            grep -q '^WORKERS=' .env || echo 'WORKERS=3' >> .env
-            # DB pool for concurrent workers (3 workers × 20 pool = 60 connections)
-            grep -q '^DB_POOL_SIZE=' .env && sed -i 's/^DB_POOL_SIZE=.*/DB_POOL_SIZE=20/' .env || echo 'DB_POOL_SIZE=20' >> .env
-            grep -q '^DB_MAX_OVERFLOW=' .env && sed -i 's/^DB_MAX_OVERFLOW=.*/DB_MAX_OVERFLOW=10/' .env || echo 'DB_MAX_OVERFLOW=10' >> .env
-            # ONNX thread limits per worker — prevents thread thrashing
-            grep -q '^OMP_NUM_THREADS=' .env && sed -i 's/^OMP_NUM_THREADS=.*/OMP_NUM_THREADS=4/' .env || echo 'OMP_NUM_THREADS=4' >> .env
+            # 80-core server: 35 workers × 2 ONNX threads = 70 cores (10 left for OS/nginx/pg)
+            sed -i 's/^WORKERS=.*/WORKERS=35/' .env
+            grep -q '^WORKERS=' .env || echo 'WORKERS=35' >> .env
+            # DB pool: 35 workers × (5 pool + 3 overflow) = 280 connections (within pg max 500)
+            grep -q '^DB_POOL_SIZE=' .env && sed -i 's/^DB_POOL_SIZE=.*/DB_POOL_SIZE=5/' .env || echo 'DB_POOL_SIZE=5' >> .env
+            grep -q '^DB_MAX_OVERFLOW=' .env && sed -i 's/^DB_MAX_OVERFLOW=.*/DB_MAX_OVERFLOW=3/' .env || echo 'DB_MAX_OVERFLOW=3' >> .env
+            # 2 ONNX threads per worker — maximizes worker count on 80 cores
+            grep -q '^OMP_NUM_THREADS=' .env && sed -i 's/^OMP_NUM_THREADS=.*/OMP_NUM_THREADS=2/' .env || echo 'OMP_NUM_THREADS=2' >> .env
             # Faster detection for bulk enrollment (320x320 vs 640x640 = ~4x faster)
             grep -q '^FACE_DET_SIZE=' .env && sed -i 's/^FACE_DET_SIZE=.*/FACE_DET_SIZE=320,320/' .env || echo 'FACE_DET_SIZE=320,320' >> .env
             # Disable expensive checks for bulk enrollment
@@ -62,15 +62,15 @@ jobs:
             echo "=== Restarting services ==="
             docker compose -f docker-compose.prod.yaml up -d --remove-orphans
 
-            echo "=== Waiting for API to be healthy ==="
-            for i in $(seq 1 90); do
+            echo "=== Waiting for API to be healthy (35 workers loading models ~3-5 min) ==="
+            for i in $(seq 1 150); do
               if curl -sf http://localhost/api/v1/health > /dev/null 2>&1; then
-                echo "API is healthy!"
+                echo "API is healthy after $((i * 2)) seconds!"
                 break
               fi
-              if [ "$i" -eq 90 ]; then
-                echo "ERROR: API failed health check after 90 seconds"
-                docker compose -f docker-compose.prod.yaml logs --tail=50 api
+              if [ "$i" -eq 150 ]; then
+                echo "ERROR: API failed health check after 300 seconds"
+                docker compose -f docker-compose.prod.yaml logs --tail=100 api
                 exit 1
               fi
               sleep 2
