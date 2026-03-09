@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     admin, analytics, batch_enroll, compare, deduplicate,
     enroll, health, liveness, match, multi_frame_liveness, records,
+    system_health,
 )
 
 v1_router = APIRouter()
@@ -21,3 +22,4 @@ v1_router.include_router(multi_frame_liveness.router, tags=["liveness"])
 v1_router.include_router(records.router, tags=["records"])
 v1_router.include_router(analytics.router, tags=["analytics"])
 v1_router.include_router(admin.router, tags=["admin"])
+v1_router.include_router(system_health.router, tags=["admin"])

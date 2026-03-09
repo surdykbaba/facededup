@@ -180,6 +180,18 @@ def create_app() -> FastAPI:
                 return auth_error
         return get_events_html()
 
+    # System Health page (password-protected via HTTP Basic Auth)
+    from app.system_health_page import get_system_health_html
+
+    @app.get("/system", response_class=HTMLResponse, include_in_schema=False)
+    async def system_health_page(request: Request):
+        docs_pw = settings.DOCS_PASSWORD
+        if docs_pw:
+            auth_error = _check_basic_auth(request, docs_pw, "FaceDedup System Health")
+            if auth_error:
+                return auth_error
+        return get_system_health_html()
+
     @app.get("/api/v1/postman", include_in_schema=False)
     async def postman_collection():
         """Serve the Postman collection JSON for download."""

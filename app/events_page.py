@@ -25,6 +25,40 @@ def get_events_html() -> str:
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #1f2937; }
         ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+        /* Light theme overrides */
+        html.light { color-scheme: light; }
+        html.light body { background: #f8fafc !important; color: #1e293b !important; }
+        html.light .card { background: #fff !important; border-color: #e2e8f0 !important; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+        html.light header { background: #fff !important; }
+        html.light .bg-gray-950 { background: #fff !important; }
+        html.light .border-gray-800, html.light .border-gray-700 { border-color: #e2e8f0 !important; }
+        html.light .bg-gray-800 { background: #f1f5f9 !important; }
+        html.light .bg-gray-900 { background: #f8fafc !important; }
+        html.light .text-white { color: #0f172a !important; }
+        html.light .text-gray-100 { color: #1e293b !important; }
+        html.light .text-gray-200 { color: #334155 !important; }
+        html.light .text-gray-300 { color: #475569 !important; }
+        html.light .text-gray-400 { color: #64748b !important; }
+        html.light .text-gray-500 { color: #94a3b8 !important; }
+        html.light .divide-gray-800 > * + * { border-color: #e2e8f0 !important; }
+        html.light .bg-gray-700 { background: #e2e8f0 !important; }
+        html.light input, html.light select { background: #f1f5f9 !important; border-color: #cbd5e1 !important; color: #334155 !important; }
+        html.light input::placeholder { color: #94a3b8 !important; }
+        html.light footer { border-color: #e2e8f0 !important; }
+        html.light .badge-success { background: #d1fae5 !important; color: #065f46 !important; }
+        html.light .badge-failed { background: #fef3c7 !important; color: #92400e !important; }
+        html.light .badge-error { background: #fee2e2 !important; color: #991b1b !important; }
+        html.light .event-row:hover { background: #f1f5f9 !important; }
+        html.light .table-header { background: #f8fafc !important; }
+        html.light .pagination-btn { background: #f1f5f9 !important; border-color: #cbd5e1 !important; color: #475569 !important; }
+        html.light .pagination-btn:hover:not(:disabled) { background: #e2e8f0 !important; color: #1e293b !important; }
+        html.light #eventModal > div:last-child { background: #fff !important; border-color: #e2e8f0 !important; }
+        html.light .error-box { background: #fef2f2 !important; border-color: #fecaca !important; color: #b91c1c !important; }
+        html.light .metadata-box { background: #f8fafc !important; border-color: #e2e8f0 !important; color: #334155 !important; }
+        html.light .detail-label { color: #64748b !important; }
+        html.light .detail-value { color: #334155 !important; }
+        html.light ::-webkit-scrollbar-track { background: #f1f5f9; }
+        html.light ::-webkit-scrollbar-thumb { background: #cbd5e1; }
         /* Modal styles */
         .detail-grid { display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px; align-items: start; }
         .detail-label { color: #9ca3af; font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; padding-top: 2px; }
@@ -63,6 +97,11 @@ def get_events_html() -> str:
                 </div>
                 <div class="flex flex-wrap items-center gap-3">
                     <a href="/dashboard" class="text-sm text-gray-400 hover:text-white transition">&#8592; Dashboard</a>
+                    <div class="h-4 w-px bg-gray-700"></div>
+                    <button onclick="toggleTheme()" id="themeToggle" class="p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition" title="Toggle light/dark theme">
+                        <svg id="themeIconSun" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                        <svg id="themeIconMoon" class="w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+                    </button>
                     <div class="h-4 w-px bg-gray-700"></div>
                     <div class="relative">
                         <input type="password" id="apiKey" placeholder="X-API-Key"
@@ -532,6 +571,26 @@ function closeModal() {
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closeModal();
 });
+
+// ===== Theme Toggle =====
+function toggleTheme() {
+    const isLight = document.documentElement.classList.toggle('light');
+    localStorage.setItem('facededup_theme', isLight ? 'light' : 'dark');
+    updateThemeIcons();
+}
+
+function updateThemeIcons() {
+    const isLight = document.documentElement.classList.contains('light');
+    document.getElementById('themeIconSun').classList.toggle('hidden', isLight);
+    document.getElementById('themeIconMoon').classList.toggle('hidden', !isLight);
+}
+
+// Apply saved theme on load
+(function() {
+    const saved = localStorage.getItem('facededup_theme');
+    if (saved === 'light') document.documentElement.classList.add('light');
+    updateThemeIcons();
+})();
 </script>
 
 </body>

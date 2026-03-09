@@ -34,6 +34,37 @@ def get_dashboard_html() -> str:
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #1f2937; }
         ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+        /* Light theme overrides */
+        html.light { color-scheme: light; }
+        html.light body { background: #f8fafc !important; color: #1e293b !important; }
+        html.light .card { background: #fff !important; border-color: #e2e8f0 !important; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+        html.light header { background: #fff !important; }
+        html.light .bg-gray-950 { background: #fff !important; }
+        html.light .border-gray-800, html.light .border-gray-700 { border-color: #e2e8f0 !important; }
+        html.light .bg-gray-800 { background: #f1f5f9 !important; }
+        html.light .bg-gray-900 { background: #f8fafc !important; }
+        html.light .bg-gradient-to-r { background: linear-gradient(to right, #eff6ff, #f8fafc) !important; }
+        html.light .text-white { color: #0f172a !important; }
+        html.light .text-gray-100 { color: #1e293b !important; }
+        html.light .text-gray-200 { color: #334155 !important; }
+        html.light .text-gray-300 { color: #475569 !important; }
+        html.light .text-gray-400 { color: #64748b !important; }
+        html.light .text-gray-500 { color: #94a3b8 !important; }
+        html.light .divide-gray-800 > * + * { border-color: #e2e8f0 !important; }
+        html.light .bg-gray-700 { background: #e2e8f0 !important; }
+        html.light input, html.light select { background: #f1f5f9 !important; border-color: #cbd5e1 !important; color: #334155 !important; }
+        html.light input::placeholder { color: #94a3b8 !important; }
+        html.light footer { border-color: #e2e8f0 !important; }
+        html.light .badge-success { background: #d1fae5 !important; color: #065f46 !important; }
+        html.light .badge-failed { background: #fef3c7 !important; color: #92400e !important; }
+        html.light .badge-error { background: #fee2e2 !important; color: #991b1b !important; }
+        html.light .pill-green { background: #d1fae5 !important; color: #065f46 !important; }
+        html.light .pill-red { background: #fee2e2 !important; color: #991b1b !important; }
+        html.light .pill-yellow { background: #fef3c7 !important; color: #92400e !important; }
+        html.light .pill-gray { background: #f1f5f9 !important; color: #64748b !important; }
+        html.light .event-row:hover { background: #f1f5f9 !important; }
+        html.light ::-webkit-scrollbar-track { background: #f1f5f9; }
+        html.light ::-webkit-scrollbar-thumb { background: #cbd5e1; }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen">
@@ -56,6 +87,11 @@ def get_dashboard_html() -> str:
                 </div>
                 <div class="flex flex-wrap items-center gap-3">
                     <a href="/" class="text-sm text-gray-400 hover:text-white transition">&#8592; API Docs</a>
+                    <div class="h-4 w-px bg-gray-700"></div>
+                    <button onclick="toggleTheme()" id="themeToggle" class="p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition" title="Toggle light/dark theme">
+                        <svg id="themeIconSun" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                        <svg id="themeIconMoon" class="w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+                    </button>
                     <div class="h-4 w-px bg-gray-700"></div>
                     <div class="relative">
                         <input type="password" id="apiKey" placeholder="X-API-Key"
@@ -244,7 +280,24 @@ def get_dashboard_html() -> str:
             </div>
         </div>
 
-        <!-- View All Events Link -->
+        <!-- Navigation Cards -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <a href="/system" class="card p-5 flex items-center justify-between group hover:border-emerald-500/50 transition block">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-emerald-600/20 rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-200 group-hover:text-white transition">System Health</p>
+                    <p class="text-xs text-gray-500">CPU, memory, disk, processes &amp; detailed server metrics</p>
+                </div>
+            </div>
+            <svg class="w-5 h-5 text-gray-500 group-hover:text-emerald-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+            </svg>
+        </a>
         <a href="/events" class="card p-5 flex items-center justify-between group hover:border-indigo-500/50 transition block">
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 bg-indigo-600/20 rounded-lg flex items-center justify-center">
@@ -261,6 +314,7 @@ def get_dashboard_html() -> str:
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
             </svg>
         </a>
+        </div>
 
     </main>
 
@@ -795,6 +849,26 @@ function renderThroughput(data) {
         sparklineChart.update('none');
     }
 }
+
+// ===== Theme Toggle =====
+function toggleTheme() {
+    const isLight = document.documentElement.classList.toggle('light');
+    localStorage.setItem('facededup_theme', isLight ? 'light' : 'dark');
+    updateThemeIcons();
+}
+
+function updateThemeIcons() {
+    const isLight = document.documentElement.classList.contains('light');
+    document.getElementById('themeIconSun').classList.toggle('hidden', isLight);
+    document.getElementById('themeIconMoon').classList.toggle('hidden', !isLight);
+}
+
+// Apply saved theme on load
+(function() {
+    const saved = localStorage.getItem('facededup_theme');
+    if (saved === 'light') document.documentElement.classList.add('light');
+    updateThemeIcons();
+})();
 
 // ===== Keyboard shortcut: Enter to save key =====
 document.getElementById('apiKey').addEventListener('keydown', e => {
