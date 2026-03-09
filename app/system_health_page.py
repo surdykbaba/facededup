@@ -89,6 +89,10 @@ def get_system_health_html() -> str:
                 </div>
             </div>
             <div class="flex flex-wrap items-center gap-3 mt-3">
+                <!-- Server Tabs -->
+                <div id="serverTabs" class="flex bg-gray-800 rounded-lg p-0.5">
+                    <button onclick="selectServer(0)" data-server="0" class="server-tab px-3 py-1 rounded-md text-xs font-medium transition bg-blue-600 text-white">This Server</button>
+                </div>
                 <button onclick="refreshData()" class="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium transition">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                     Refresh
@@ -262,6 +266,8 @@ def get_system_health_html() -> str:
 // ===== State =====
 let refreshInterval = null;
 const REFRESH_MS = 5000;
+let clusterData = null;  // cached cluster health response
+let selectedServer = 0;  // index into clusterData.servers
 
 // ===== Init =====
 document.addEventListener('DOMContentLoaded', () => {
@@ -315,6 +321,41 @@ async function sysApi(path) {
     return resp.json();
 }
 
+// ===== Server Selection =====
+function selectServer(idx) {
+    selectedServer = idx;
+    document.querySelectorAll('.server-tab').forEach((b, i) => {
+        if (i === idx) { b.classList.add('bg-blue-600', 'text-white'); b.classList.remove('text-gray-400'); }
+        else { b.classList.remove('bg-blue-600', 'text-white'); b.classList.add('text-gray-400'); }
+    });
+    if (clusterData && clusterData.servers && clusterData.servers[idx]) {
+        const srv = clusterData.servers[idx];
+        if (srv.system_health) {
+            renderAll(srv.system_health);
+        } else if (idx === 0) {
+            // Local server: fetch directly
+            sysApi('/admin/system-health').then(renderAll).catch(e => console.error(e));
+        }
+    }
+}
+
+function buildServerTabs(servers) {
+    const container = document.getElementById('serverTabs');
+    container.innerHTML = servers.map((s, i) => {
+        const label = s.server_name || ('Server ' + (i + 1));
+        const role = s.server_role === 'primary' ? 'P' : 'W';
+        const isOk = s.status === 'healthy';
+        const dotClass = isOk ? 'dot-green' : s.status === 'degraded' ? 'dot-yellow' : 'dot-red';
+        const active = i === selectedServer;
+        const cls = active ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white';
+        return '<button onclick="selectServer(' + i + ')" data-server="' + i + '" class="server-tab flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition ' + cls + '">' +
+            '<span class="status-dot ' + dotClass + '" style="width:6px;height:6px;"></span>' +
+            '<span>' + label + '</span>' +
+            '<span class="text-[9px] opacity-60">' + role + '</span>' +
+            '</button>';
+    }).join('');
+}
+
 // ===== Main Refresh =====
 async function refreshData() {
     const apiKey = document.getElementById('apiKey').value.trim();
@@ -323,10 +364,42 @@ async function refreshData() {
     banner.classList.add('hidden');
 
     try {
-        const data = await sysApi('/admin/system-health');
-        renderAll(data);
+        // Fetch cluster health to discover servers
+        const cluster = await sysApi('/admin/cluster-health');
+        clusterData = cluster;
+
+        // Enrich each server with its full system-health data
+        // The primary (index 0) is local - fetch its full data directly
+        if (cluster.servers && cluster.servers.length > 0) {
+            const localData = await sysApi('/admin/system-health');
+            cluster.servers[0].system_health = localData;
+
+            // Build tabs if more than 1 server
+            if (cluster.servers.length > 1) {
+                buildServerTabs(cluster.servers);
+            } else {
+                buildServerTabs(cluster.servers);
+            }
+
+            // Render selected server
+            if (selectedServer < cluster.servers.length) {
+                const srv = cluster.servers[selectedServer];
+                if (srv.system_health) {
+                    renderAll(srv.system_health);
+                } else if (selectedServer === 0) {
+                    renderAll(localData);
+                }
+            }
+        }
     } catch (err) {
         console.error('[SystemHealth] fetch failed:', err.message);
+        // Fallback: try direct system-health
+        try {
+            const data = await sysApi('/admin/system-health');
+            renderAll(data);
+        } catch (e2) {
+            console.error('[SystemHealth] fallback failed:', e2.message);
+        }
     }
 
     document.getElementById('lastRefresh').textContent = 'Last refresh: ' + new Date().toLocaleTimeString();

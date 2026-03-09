@@ -123,6 +123,13 @@ class Settings(BaseSettings):
     # Server
     WORKERS: int = 3
 
+    # Cluster: comma-separated base URLs of worker nodes (e.g. "http://10.8.1.14")
+    WORKER_URLS: str = ""
+
+    @property
+    def worker_url_list(self) -> list[str]:
+        return [u.strip().rstrip("/") for u in self.WORKER_URLS.split(",") if u.strip()]
+
 
 @lru_cache
 def get_settings() -> Settings:

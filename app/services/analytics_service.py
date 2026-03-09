@@ -34,23 +34,34 @@ async def _persist_event(
     error_detail: str | None = None,
     metadata: dict | None = None,
 ) -> None:
-    """Insert an ApiEvent row using its own session (not the request session)."""
-    try:
-        async with session_factory() as session:
-            event = ApiEvent(
-                event_type=event_type,
-                status=status,
-                api_key_hash=_hash_api_key(api_key) if api_key else "unknown",
-                record_id=record_id,
-                external_id=external_id,
-                duration_ms=duration_ms,
-                error_detail=str(error_detail)[:2000] if error_detail else None,
-                metadata_=metadata,
-            )
-            session.add(event)
-            await session.commit()
-    except Exception:
-        logger.warning("Failed to log analytics event (non-fatal)", exc_info=True)
+    """Insert an ApiEvent row using its own session (not the request session).
+
+    Retries once on failure to reduce event loss under high DB load.
+    """
+    for attempt in range(2):
+        try:
+            async with session_factory() as session:
+                event = ApiEvent(
+                    event_type=event_type,
+                    status=status,
+                    api_key_hash=_hash_api_key(api_key) if api_key else "unknown",
+                    record_id=record_id,
+                    external_id=external_id,
+                    duration_ms=duration_ms,
+                    error_detail=str(error_detail)[:2000] if error_detail else None,
+                    metadata_=metadata,
+                )
+                session.add(event)
+                await session.commit()
+            return
+        except Exception:
+            if attempt == 0:
+                await asyncio.sleep(0.1)
+            else:
+                logger.warning(
+                    "Failed to log analytics event after 2 attempts (non-fatal)",
+                    exc_info=True,
+                )
 
 
 def log_event(

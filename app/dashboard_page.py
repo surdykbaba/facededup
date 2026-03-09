@@ -199,6 +199,11 @@ def get_dashboard_html() -> str:
                     <span id="kpiIndexDot" class="status-dot dot-gray"></span>
                     <span id="kpiIndexLabel" class="text-xs text-gray-500">HNSW index: checking</span>
                 </div>
+                <div id="kpiEnrollCorrelation" class="hidden mt-1.5 text-[11px]">
+                    <span class="text-gray-500">Logged enroll events: </span>
+                    <span id="kpiEnrollEvents" class="text-gray-300 tabular-nums">--</span>
+                    <span id="kpiCorrelationIcon" class="ml-1"></span>
+                </div>
             </div>
             <div class="card p-5">
                 <p class="text-xs text-gray-400 uppercase tracking-wider font-medium">API Events</p>
@@ -219,15 +224,17 @@ def get_dashboard_html() -> str:
             </div>
         </div>
 
-        <!-- System Health -->
-        <div class="card p-4">
-            <div class="flex flex-wrap items-center gap-3">
-                <span class="text-xs font-medium text-gray-400 uppercase tracking-wider mr-2">System Health</span>
-                <span id="healthDB" class="pill pill-gray"><span class="status-dot dot-gray"></span>Database</span>
-                <span id="healthRedis" class="pill pill-gray"><span class="status-dot dot-gray"></span>Redis</span>
-                <span id="healthModel" class="pill pill-gray"><span class="status-dot dot-gray"></span>Face Model</span>
-                <span id="healthGPU" class="pill pill-gray"><span class="status-dot dot-gray"></span>GPU</span>
-                <span id="healthAntiSpoof" class="pill pill-gray"><span class="status-dot dot-gray"></span>Anti-Spoof</span>
+        <!-- Cluster Health -->
+        <div id="clusterHealthSection" class="card p-4">
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+                <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/>
+                </svg>
+                <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Cluster Health</span>
+                <span id="clusterSummary" class="text-xs text-gray-500 ml-auto">Loading...</span>
+            </div>
+            <div id="clusterHealthGrid" class="space-y-2">
+                <div class="text-xs text-gray-600">Loading cluster status...</div>
             </div>
         </div>
 
@@ -477,21 +484,25 @@ async function refreshAll() {
     const { start, end } = getDateRange();
     const tsInterval = currentRange === '24h' ? 'hour' : 'day';
 
-    const labels = ['Health', 'Analytics Summary', 'Timeseries', 'Index Status'];
-    const [health, summary, timeseries, indexStatus] = await Promise.allSettled([
-        dashApi('GET', '/health'),
+    const labels = ['Cluster Health', 'Analytics Summary', 'Timeseries', 'Index Status', 'All-Time Summary'];
+    const [clusterHealth, summary, timeseries, indexStatus, allTimeSummary] = await Promise.allSettled([
+        dashApi('GET', '/admin/cluster-health'),
         dashApi('GET', '/analytics/summary', { start, end }),
         dashApi('GET', '/analytics/timeseries', { start, end, interval: tsInterval }),
         dashApi('GET', '/admin/index/status'),
+        dashApi('GET', '/analytics/summary'),  // No date filter = all-time totals
     ]);
 
     // Collect errors from rejected promises
-    const results = [health, summary, timeseries, indexStatus];
+    const results = [clusterHealth, summary, timeseries, indexStatus, allTimeSummary];
     const errors = [];
     results.forEach((r, i) => {
         if (r.status === 'rejected') {
-            errors.push(labels[i] + ': ' + r.reason.message);
-            console.error('[Dashboard] ' + labels[i] + ' failed:', r.reason.message);
+            // Don't report all-time summary as an error to user
+            if (i < 4) {
+                errors.push(labels[i] + ': ' + r.reason.message);
+                console.error('[Dashboard] ' + labels[i] + ' failed:', r.reason.message);
+            }
         }
     });
 
@@ -502,10 +513,15 @@ async function refreshAll() {
         apiBanner.classList.add('hidden');
     }
 
-    if (health.status === 'fulfilled') renderHealth(health.value);
+    if (clusterHealth.status === 'fulfilled') renderClusterHealth(clusterHealth.value);
     if (summary.status === 'fulfilled') renderSummary(summary.value);
     if (timeseries.status === 'fulfilled') renderTimeseries(timeseries.value);
     if (indexStatus.status === 'fulfilled') renderIndexStatus(indexStatus.value);
+    // Use all-time enroll count for correlation with total face records
+    if (allTimeSummary.status === 'fulfilled') {
+        const allEnroll = allTimeSummary.value.by_type.find(t => t.event_type === 'enroll');
+        if (allEnroll) updateEnrollCorrelation(allEnroll.success);
+    }
 
     // Show zeroes instead of '--' when calls succeed but data is empty
     if (summary.status === 'fulfilled' && summary.value.total_events === 0) {
@@ -524,32 +540,86 @@ async function refreshAll() {
 
 // ===== Render Functions =====
 
-function renderHealth(data) {
-    const dbOk = data.database === 'healthy';
-    const redisOk = data.redis === 'healthy';
-    const modelOk = data.face_model === 'loaded';
-    const gpuOn = data.gpu_enabled === true;
-    setHealthPill('healthDB', dbOk, dbOk ? 'Database' : 'DB Down', false);
-    setHealthPill('healthRedis', redisOk, redisOk ? 'Redis' : 'Redis Down', false);
-    setHealthPill('healthModel', modelOk, modelOk ? 'Face Model' : 'Model Missing', false);
-    setHealthPill('healthGPU', gpuOn, gpuOn ? 'GPU Active' : 'CPU Only', !gpuOn);
-    const asOk = data.anti_spoof_loaded === true;
-    setHealthPill('healthAntiSpoof', asOk, asOk ? 'Anti-Spoof' : 'No Anti-Spoof', !asOk);
+function renderClusterHealth(data) {
+    const grid = document.getElementById('clusterHealthGrid');
+    const summary = document.getElementById('clusterSummary');
+
+    if (!data.servers || !data.servers.length) {
+        grid.innerHTML = '<div class="text-xs text-gray-500">No servers found</div>';
+        summary.textContent = '0 servers';
+        return;
+    }
+
+    const healthy = data.healthy_count || 0;
+    const total = data.total_servers || data.servers.length;
+    const allOk = healthy === total;
+    summary.innerHTML = '<span class="status-dot ' + (allOk ? 'dot-green' : 'dot-yellow') + '"></span> ' +
+        healthy + '/' + total + ' servers healthy';
+
+    grid.innerHTML = data.servers.map((s, i) => {
+        const isOk = s.status === 'healthy';
+        const isDegraded = s.status === 'degraded';
+        const isDown = s.status === 'unreachable' || s.status === 'error';
+        const borderColor = isOk ? 'border-emerald-500/30' : isDegraded ? 'border-amber-500/30' : 'border-red-500/30';
+        const roleLabel = s.server_role === 'primary' ? 'Primary' : 'Worker';
+        const roleBg = s.server_role === 'primary' ? 'bg-blue-600/20 text-blue-400' : 'bg-violet-600/20 text-violet-400';
+
+        let statusDot, statusText;
+        if (isOk) { statusDot = 'dot-green'; statusText = 'Healthy'; }
+        else if (isDegraded) { statusDot = 'dot-yellow'; statusText = 'Degraded'; }
+        else { statusDot = 'dot-red'; statusText = s.error ? 'Unreachable' : 'Down'; }
+
+        // Build service pills
+        let pills = '';
+        if (!isDown) {
+            const dbOk = s.database === 'healthy';
+            const redisOk = s.redis === 'healthy';
+            const modelOk = s.face_model === 'loaded';
+            const gpuOn = s.gpu_enabled === true;
+            const asOk = s.anti_spoof_loaded === true;
+            pills = makePill(dbOk, dbOk ? 'DB' : 'DB Down', false) +
+                    makePill(redisOk, redisOk ? 'Redis' : 'Redis Down', false) +
+                    makePill(modelOk, modelOk ? 'Model' : 'No Model', false) +
+                    makePill(gpuOn, gpuOn ? 'GPU' : 'CPU', !gpuOn) +
+                    makePill(asOk, asOk ? 'Anti-Spoof' : 'No A-S', !asOk);
+        }
+
+        // System info (CPU, Memory, Workers) if available
+        let sysInfo = '';
+        if (s.cpu && s.memory && s.processes) {
+            sysInfo = '<div class="flex gap-4 mt-1.5 text-[11px] text-gray-500">' +
+                '<span>CPU: <span class="text-gray-300 tabular-nums">' + s.cpu.total_percent + '%</span> (' + s.cpu.logical_cores + ' cores)</span>' +
+                '<span>Mem: <span class="text-gray-300 tabular-nums">' + s.memory.percent + '%</span> (' + s.memory.used_gb + '/' + s.memory.total_gb + ' GB)</span>' +
+                '<span>Workers: <span class="text-gray-300">' + s.processes.gunicorn_workers + '</span></span>' +
+                '</div>';
+        }
+
+        return '<div class="bg-gray-800/50 rounded-lg p-3 border ' + borderColor + '">' +
+            '<div class="flex flex-wrap items-center gap-2">' +
+                '<span class="status-dot ' + statusDot + '"></span>' +
+                '<span class="text-sm font-medium text-white">' + (s.server_name || 'Server ' + (i+1)) + '</span>' +
+                '<span class="text-[10px] px-1.5 py-0.5 rounded ' + roleBg + ' font-medium">' + roleLabel + '</span>' +
+                '<span class="text-xs text-gray-500 ml-auto">' + statusText + '</span>' +
+            '</div>' +
+            (pills ? '<div class="flex flex-wrap gap-1.5 mt-2">' + pills + '</div>' : '') +
+            (isDown && s.error ? '<div class="text-xs text-red-400 mt-1.5">' + s.error + '</div>' : '') +
+            sysInfo +
+        '</div>';
+    }).join('');
 }
 
-function setHealthPill(id, ok, label, infoOnly) {
-    const el = document.getElementById(id);
+function makePill(ok, label, infoOnly) {
     let dotClass, pillClass;
     if (ok) { dotClass = 'dot-green'; pillClass = 'pill-green'; }
     else if (infoOnly) { dotClass = 'dot-yellow'; pillClass = 'pill-yellow'; }
-    else if (ok === false) { dotClass = 'dot-red'; pillClass = 'pill-red'; }
-    else { dotClass = 'dot-gray'; pillClass = 'pill-gray'; }
-    el.className = 'pill ' + pillClass;
-    el.innerHTML = '<span class="status-dot ' + dotClass + '"></span>' + label;
+    else { dotClass = 'dot-red'; pillClass = 'pill-red'; }
+    return '<span class="pill ' + pillClass + '" style="font-size:10px; padding:2px 8px;"><span class="status-dot ' + dotClass + '"></span>' + label + '</span>';
 }
 
 function renderIndexStatus(data) {
     document.getElementById('kpiRecords').textContent = Number(data.total_records).toLocaleString();
+    _totalFaceRecords = data.total_records;
+    renderCorrelation();
     const dot = document.getElementById('kpiIndexDot');
     const label = document.getElementById('kpiIndexLabel');
     if (data.index_exists) {
@@ -593,6 +663,37 @@ function renderSummary(data) {
 
     // Stacked bar chart
     updateSuccessFailChart(data.by_type);
+}
+
+// Track enrollment event count for correlation with face records
+let _enrollSuccessCount = 0;
+let _totalFaceRecords = 0;
+
+function updateEnrollCorrelation(enrollSuccess) {
+    _enrollSuccessCount = enrollSuccess;
+    renderCorrelation();
+}
+
+function renderCorrelation() {
+    const container = document.getElementById('kpiEnrollCorrelation');
+    const eventsEl = document.getElementById('kpiEnrollEvents');
+    const iconEl = document.getElementById('kpiCorrelationIcon');
+    if (!_totalFaceRecords && !_enrollSuccessCount) return;
+
+    container.classList.remove('hidden');
+    eventsEl.textContent = _enrollSuccessCount.toLocaleString();
+
+    if (_totalFaceRecords > 0 && _enrollSuccessCount > 0) {
+        const diff = Math.abs(_totalFaceRecords - _enrollSuccessCount);
+        const pct = (diff / _totalFaceRecords * 100);
+        if (pct < 1) {
+            iconEl.innerHTML = '<span class="text-emerald-400" title="Records and events match">&#10003;</span>';
+        } else if (pct < 5) {
+            iconEl.innerHTML = '<span class="text-amber-400" title="~' + pct.toFixed(1) + '% drift between records and logged events">&#9888; ' + pct.toFixed(1) + '% drift</span>';
+        } else {
+            iconEl.innerHTML = '<span class="text-red-400" title="' + pct.toFixed(1) + '% drift — some events may be lost under high load">&#9888; ' + pct.toFixed(1) + '% drift</span>';
+        }
+    }
 }
 
 function renderSummaryTable(byType) {

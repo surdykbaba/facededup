@@ -4,9 +4,11 @@ import platform
 import time
 from datetime import datetime, timezone
 
+import httpx
 import psutil
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
+from app.config import get_settings
 from app.core.security import verify_api_key
 
 router = APIRouter()
@@ -130,4 +132,125 @@ async def system_health(
             "uptime_seconds": uptime_seconds,
         },
         "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/admin/cluster-health")
+async def cluster_health(
+    request: Request,
+    _api_key: str = Depends(verify_api_key),
+) -> dict:
+    """Get health status of all servers in the cluster.
+
+    Returns the local server's health plus health from configured worker nodes.
+    Worker URLs are configured via the WORKER_URLS environment variable.
+    """
+    settings = get_settings()
+    api_key = request.headers.get("X-API-Key", "")
+    servers = []
+
+    # Local server health
+    try:
+        local_health = await _get_local_health(request)
+        local_health["server_name"] = platform.node()
+        local_health["server_url"] = "local"
+        local_health["server_role"] = "primary"
+        servers.append(local_health)
+    except Exception as e:
+        logger.error("Failed to get local health: %s", e)
+        servers.append({
+            "server_name": platform.node(),
+            "server_url": "local",
+            "server_role": "primary",
+            "status": "error",
+            "error": str(e),
+        })
+
+    # Worker server health (fetch in parallel)
+    worker_urls = settings.worker_url_list
+    if worker_urls:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            for url in worker_urls:
+                try:
+                    resp = await client.get(
+                        f"{url}/api/v1/health",
+                        headers={"X-API-Key": api_key},
+                    )
+                    data = resp.json()
+                    # Also get system info for hostname
+                    sys_resp = await client.get(
+                        f"{url}/api/v1/admin/system-health",
+                        headers={"X-API-Key": api_key},
+                    )
+                    sys_data = sys_resp.json() if sys_resp.status_code == 200 else {}
+                    hostname = sys_data.get("system", {}).get("hostname", url)
+                    data["server_name"] = hostname
+                    data["server_url"] = url
+                    data["server_role"] = "worker"
+                    data["system"] = sys_data.get("system")
+                    data["cpu"] = sys_data.get("cpu")
+                    data["memory"] = sys_data.get("memory")
+                    data["load_average"] = sys_data.get("load_average")
+                    data["processes"] = sys_data.get("processes")
+                    # Full system-health for System Health page rendering
+                    if sys_data:
+                        data["system_health"] = sys_data
+                    servers.append(data)
+                except Exception as e:
+                    logger.error("Failed to fetch health from %s: %s", url, e)
+                    servers.append({
+                        "server_name": url,
+                        "server_url": url,
+                        "server_role": "worker",
+                        "status": "unreachable",
+                        "error": str(e),
+                    })
+
+    return {
+        "total_servers": len(servers),
+        "healthy_count": sum(
+            1 for s in servers if s.get("status") == "healthy"
+        ),
+        "servers": servers,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+async def _get_local_health(request: Request) -> dict:
+    """Get local server health data (same as /health endpoint)."""
+    from sqlalchemy import text
+
+    settings = get_settings()
+    result = {}
+
+    # Database
+    db_status = "healthy"
+    try:
+        async with request.app.state.async_session() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception as e:
+        db_status = f"unhealthy: {e}"
+
+    # Redis
+    redis_status = "healthy"
+    try:
+        await request.app.state.redis.ping()
+    except Exception as e:
+        redis_status = f"unhealthy: {e}"
+
+    # Face model
+    model_status = "loaded" if hasattr(request.app.state, "face_analyzer") else "not loaded"
+    gpu_enabled = getattr(request.app.state, "gpu_enabled", False)
+    anti_spoof_loaded = getattr(request.app.state, "anti_spoof", None) is not None
+
+    overall = "healthy" if db_status == "healthy" and redis_status == "healthy" and model_status == "loaded" else "degraded"
+
+    return {
+        "status": overall,
+        "database": db_status,
+        "redis": redis_status,
+        "face_model": model_status,
+        "gpu_enabled": gpu_enabled,
+        "anti_spoof_loaded": anti_spoof_loaded,
+        "version": settings.APP_VERSION,
     }
