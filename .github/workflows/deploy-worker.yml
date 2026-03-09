@@ -15,16 +15,26 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: Deploy via SSH
+      - name: Deploy via SSH (proxy through Server 1)
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.WORKER_HOST }}
           username: ${{ secrets.WORKER_USER }}
-          password: ${{ secrets.WORKER_PASSWORD }}
+          password: ${{ secrets.WORKER_PASSWORD || secrets.DO_PASSWORD }}
+          proxy_host: ${{ secrets.DO_HOST }}
+          proxy_username: ${{ secrets.DO_USER }}
+          proxy_password: ${{ secrets.DO_PASSWORD }}
           command_timeout: 15m
           script: |
             set -e
             DEPLOY_DIR="/home/${{ secrets.WORKER_USER }}/facededup"
+
+            # Check Docker is installed
+            if ! command -v docker &> /dev/null; then
+              echo "ERROR: Docker is not installed on this server"
+              echo "Install Docker first: curl -fsSL https://get.docker.com | sh"
+              exit 1
+            fi
 
             # Clone repo if first deployment
             if [ ! -d "$DEPLOY_DIR" ]; then
@@ -39,6 +49,9 @@ jobs:
             git reset --hard origin/main
 
             echo "=== Configuring .env for worker node ==="
+            # Create .env if it doesn't exist
+            touch .env
+
             # Database: connect to primary server's PostgreSQL over private network
             grep -q '^DATABASE_URL=' .env 2>/dev/null && sed -i 's|^DATABASE_URL=.*|DATABASE_URL=${{ secrets.WORKER_DATABASE_URL }}|' .env || echo 'DATABASE_URL=${{ secrets.WORKER_DATABASE_URL }}' >> .env
             # Redis: connect to primary server's Redis over private network
@@ -50,8 +63,7 @@ jobs:
             grep -q '^BATCH_MAX_EMBEDDINGS=' .env && sed -i 's/^BATCH_MAX_EMBEDDINGS=.*/BATCH_MAX_EMBEDDINGS=5000/' .env || echo 'BATCH_MAX_EMBEDDINGS=5000' >> .env
 
             # 35 workers × 2 ONNX threads = 70 cores
-            sed -i 's/^WORKERS=.*/WORKERS=35/' .env
-            grep -q '^WORKERS=' .env || echo 'WORKERS=35' >> .env
+            grep -q '^WORKERS=' .env && sed -i 's/^WORKERS=.*/WORKERS=35/' .env || echo 'WORKERS=35' >> .env
             grep -q '^DB_POOL_SIZE=' .env && sed -i 's/^DB_POOL_SIZE=.*/DB_POOL_SIZE=5/' .env || echo 'DB_POOL_SIZE=5' >> .env
             grep -q '^DB_MAX_OVERFLOW=' .env && sed -i 's/^DB_MAX_OVERFLOW=.*/DB_MAX_OVERFLOW=3/' .env || echo 'DB_MAX_OVERFLOW=3' >> .env
             grep -q '^OMP_NUM_THREADS=' .env && sed -i 's/^OMP_NUM_THREADS=.*/OMP_NUM_THREADS=2/' .env || echo 'OMP_NUM_THREADS=2' >> .env
@@ -64,8 +76,9 @@ jobs:
             grep -q '^ENROLL_DEDUP_ENABLED=' .env && sed -i 's/^ENROLL_DEDUP_ENABLED=.*/ENROLL_DEDUP_ENABLED=False/' .env || echo 'ENROLL_DEDUP_ENABLED=False' >> .env
             grep -q '^SIMILARITY_THRESHOLD=' .env && sed -i 's/^SIMILARITY_THRESHOLD=.*/SIMILARITY_THRESHOLD=0.6/' .env || echo 'SIMILARITY_THRESHOLD=0.6' >> .env
 
-            # API key (same as primary)
+            # API key and docs password (same as primary)
             grep -q '^API_KEYS=' .env && sed -i 's/^API_KEYS=.*/API_KEYS=${{ secrets.API_KEYS }}/' .env || echo 'API_KEYS=${{ secrets.API_KEYS }}' >> .env
+            grep -q '^DOCS_PASSWORD=' .env && sed -i 's/^DOCS_PASSWORD=.*/DOCS_PASSWORD=${{ secrets.DOCS_PASSWORD }}/' .env || echo 'DOCS_PASSWORD=${{ secrets.DOCS_PASSWORD }}' >> .env
 
             echo "=== .env config ==="
             cat .env | grep -E 'DATABASE_URL|REDIS_URL|WORKERS|OMP_NUM|FACE_DET|LIVENESS|ANTISPOOF|DEDUP|RATE_LIMIT'
