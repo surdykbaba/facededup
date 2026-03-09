@@ -124,32 +124,68 @@ jobs:
             echo "=== .env config ==="
             cat .env | grep -E 'DATABASE_URL|REDIS_URL|WORKERS|OMP_NUM|FACE_DET|LIVENESS|ANTISPOOF|DEDUP|RATE_LIMIT'
 
-            echo "=== Building Docker images ==="
+            # Determine docker command
             if docker info &> /dev/null 2>&1; then
-              docker compose -f docker-compose.worker.yaml build
-              docker compose -f docker-compose.worker.yaml up -d --remove-orphans
+              DC="docker compose"
             else
-              echo "$SUDO_PASS" | sudo -S docker compose -f docker-compose.worker.yaml build
-              echo "$SUDO_PASS" | sudo -S docker compose -f docker-compose.worker.yaml up -d --remove-orphans
+              DC="run_sudo docker compose"
             fi
+
+            echo "=== Testing network connectivity to Server 1 ==="
+            # Extract DB host from DATABASE_URL
+            DB_HOST=$(echo "${{ secrets.WORKER_DATABASE_URL }}" | sed 's|.*@\(.*\):.*|\1|')
+            echo "DB Host: $DB_HOST"
+
+            # Test PostgreSQL port
+            if timeout 5 bash -c "echo > /dev/tcp/$DB_HOST/5432" 2>/dev/null; then
+              echo "PostgreSQL port 5432 is REACHABLE"
+            else
+              echo "WARNING: PostgreSQL port 5432 is NOT reachable on $DB_HOST"
+              echo "Opening firewall on Server 1 may be needed"
+            fi
+
+            # Test Redis port
+            REDIS_HOST=$(echo "${{ secrets.WORKER_REDIS_URL }}" | sed 's|.*://\(.*\):.*|\1|')
+            if timeout 5 bash -c "echo > /dev/tcp/$REDIS_HOST/6379" 2>/dev/null; then
+              echo "Redis port 6379 is REACHABLE"
+            else
+              echo "WARNING: Redis port 6379 is NOT reachable on $REDIS_HOST"
+            fi
+
+            echo "=== Stopping existing containers ==="
+            $DC -f docker-compose.worker.yaml down 2>/dev/null || true
+
+            echo "=== Building Docker images ==="
+            $DC -f docker-compose.worker.yaml build
+
+            echo "=== Starting worker services ==="
+            $DC -f docker-compose.worker.yaml up -d --remove-orphans
 
             echo "=== Waiting for API to be healthy (35 workers loading models ~3-5 min) ==="
             for i in $(seq 1 150); do
-              if curl -sf http://localhost/api/v1/health > /dev/null 2>&1; then
+              HEALTH=$(curl -sf --max-time 10 http://localhost/api/v1/health 2>&1) && {
                 echo "Worker API is healthy after $((i * 2)) seconds!"
+                echo "$HEALTH" | python3 -m json.tool 2>/dev/null || echo "$HEALTH"
                 break
+              }
+              # Show progress every 30 seconds
+              if [ $((i % 15)) -eq 0 ]; then
+                echo "Still waiting... ${i}/${150} checks ($(($i * 2))s elapsed)"
+                curl -sf --max-time 5 http://localhost/api/v1/health 2>&1 || echo "Health check returned non-zero"
               fi
               if [ "$i" -eq 150 ]; then
                 echo "ERROR: Worker API failed health check after 300 seconds"
-                if docker info &> /dev/null 2>&1; then
-                  docker compose -f docker-compose.worker.yaml logs --tail=100 api
-                else
-                  echo "$SUDO_PASS" | sudo -S docker compose -f docker-compose.worker.yaml logs --tail=100 api
-                fi
+                echo "=== Last health check attempt ==="
+                curl -v --max-time 10 http://localhost/api/v1/health 2>&1 || true
+                echo "=== Container status ==="
+                $DC -f docker-compose.worker.yaml ps 2>/dev/null || true
+                echo "=== API logs (last 50 lines) ==="
+                $DC -f docker-compose.worker.yaml logs --tail=50 api 2>/dev/null || true
+                echo "=== Nginx logs ==="
+                $DC -f docker-compose.worker.yaml logs --tail=20 nginx 2>/dev/null || true
                 exit 1
               fi
               sleep 2
             done
 
             echo "=== Worker deployment complete ==="
-            curl -s http://localhost/api/v1/health | python3 -m json.tool
