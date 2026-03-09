@@ -13,6 +13,8 @@ from app.schemas.analytics import (
     EventListItem,
     EventListResponse,
     EventTypeSummary,
+    ThroughputBucket,
+    ThroughputResponse,
     TimeseriesBucket,
     TimeseriesResponse,
 )
@@ -205,5 +207,75 @@ async def analytics_timeseries(
         interval=interval,
         period_start=start,
         period_end=end,
+        buckets=buckets,
+    )
+
+
+@router.get("/analytics/throughput", response_model=ThroughputResponse)
+async def analytics_throughput(
+    db: AsyncSession = Depends(get_db),
+    _api_key: str = Depends(verify_api_key),
+) -> ThroughputResponse:
+    """Get real-time throughput: requests per second over the last 10 minutes.
+
+    Returns per-10-second buckets for the last 10 minutes, plus current,
+    peak, and average RPS values. Designed for frequent polling (every 5s).
+    """
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(minutes=10)
+
+    # Count events per 10-second bucket over last 10 minutes
+    bucket_expr = func.to_timestamp(
+        func.floor(func.extract("epoch", ApiEvent.created_at) / 10) * 10
+    ).label("bucket")
+
+    stmt = (
+        select(
+            bucket_expr,
+            func.count().label("cnt"),
+        )
+        .where(ApiEvent.created_at >= window_start)
+        .group_by(bucket_expr)
+        .order_by(bucket_expr)
+    )
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    # Build buckets with RPS (count / 10 seconds)
+    buckets = []
+    for row in rows:
+        buckets.append(
+            ThroughputBucket(
+                timestamp=row.bucket,
+                count=row.cnt,
+                rps=round(row.cnt / 10.0, 2),
+            )
+        )
+
+    # Calculate summary stats
+    if buckets:
+        rps_values = [b.rps for b in buckets]
+        peak_rps = max(rps_values)
+        avg_rps = round(sum(rps_values) / len(rps_values), 2)
+        # Current RPS = last 60 seconds
+        cutoff_60s = now - timedelta(seconds=60)
+        recent = [b for b in buckets if b.timestamp >= cutoff_60s]
+        total_60s = sum(b.count for b in recent)
+        current_rps = round(total_60s / 60.0, 2)
+        total_10m = sum(b.count for b in buckets)
+    else:
+        current_rps = 0.0
+        peak_rps = 0.0
+        avg_rps = 0.0
+        total_60s = 0
+        total_10m = 0
+
+    return ThroughputResponse(
+        current_rps=current_rps,
+        peak_rps=peak_rps,
+        avg_rps=avg_rps,
+        total_last_60s=total_60s,
+        total_last_10m=total_10m,
         buckets=buckets,
     )

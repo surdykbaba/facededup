@@ -56,3 +56,18 @@ class TimeseriesResponse(BaseModel):
     period_start: datetime
     period_end: datetime
     buckets: list[TimeseriesBucket]
+
+
+class ThroughputBucket(BaseModel):
+    timestamp: datetime
+    count: int
+    rps: float
+
+
+class ThroughputResponse(BaseModel):
+    current_rps: float
+    peak_rps: float
+    avg_rps: float
+    total_last_60s: int
+    total_last_10m: int
+    buckets: list[ThroughputBucket]

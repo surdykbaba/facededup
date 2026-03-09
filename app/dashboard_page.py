@@ -106,6 +106,54 @@ def get_dashboard_html() -> str:
             </div>
         </div>
 
+        <!-- Live Throughput Banner -->
+        <div class="card p-5 border-blue-500/30 bg-gradient-to-r from-blue-950/50 to-gray-900">
+            <div class="flex flex-wrap items-center gap-6">
+                <div class="flex items-center gap-3">
+                    <div class="relative">
+                        <span id="liveDot" class="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse-slow"></span>
+                        <div class="w-10 h-10 bg-blue-600/30 rounded-xl flex items-center justify-center">
+                            <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="text-xs text-blue-400 uppercase tracking-wider font-semibold">Live Throughput</p>
+                        <div class="flex items-baseline gap-2">
+                            <p class="text-4xl font-bold text-white tabular-nums" id="liveRps">--</p>
+                            <span class="text-sm text-gray-400">req/sec</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-[200px]">
+                    <canvas id="sparklineChart" height="50"></canvas>
+                </div>
+                <div class="flex gap-6 text-sm">
+                    <div class="text-center">
+                        <p class="text-xs text-gray-500 uppercase tracking-wider">Peak</p>
+                        <p class="text-lg font-semibold text-amber-400 tabular-nums" id="livePeak">--</p>
+                        <p class="text-[10px] text-gray-600">req/sec</p>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-xs text-gray-500 uppercase tracking-wider">Avg</p>
+                        <p class="text-lg font-semibold text-blue-400 tabular-nums" id="liveAvg">--</p>
+                        <p class="text-[10px] text-gray-600">req/sec</p>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-xs text-gray-500 uppercase tracking-wider">Last 60s</p>
+                        <p class="text-lg font-semibold text-white tabular-nums" id="live60s">--</p>
+                        <p class="text-[10px] text-gray-600">requests</p>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-xs text-gray-500 uppercase tracking-wider">Last 10m</p>
+                        <p class="text-lg font-semibold text-white tabular-nums" id="live10m">--</p>
+                        <p class="text-[10px] text-gray-600">requests</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- KPI Cards -->
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div class="card p-5">
@@ -228,13 +276,16 @@ def get_dashboard_html() -> str:
 // ===== State =====
 let currentRange = '7d';
 let refreshInterval = null;
+let throughputInterval = null;
 const REFRESH_MS = 30000;
+const THROUGHPUT_MS = 5000;
 
 // Chart instances
 let usageTrendChart = null;
 let latencyTrendChart = null;
 let eventTypeChart = null;
 let successFailChart = null;
+let sparklineChart = null;
 
 // Color palette for event types
 const TYPE_COLORS = {
@@ -261,8 +312,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const saved = sessionStorage.getItem('facededup_dashboard_key');
     if (saved) document.getElementById('apiKey').value = saved;
     initCharts();
+    initSparkline();
     refreshAll();
+    refreshThroughput();
     startAutoRefresh();
+    startThroughputRefresh();
 });
 
 // ===== API Key =====
@@ -271,6 +325,7 @@ function saveKey() {
     if (key) {
         sessionStorage.setItem('facededup_dashboard_key', key);
         refreshAll();
+        refreshThroughput();
     }
 }
 
@@ -314,12 +369,20 @@ function startAutoRefresh() {
     refreshInterval = setInterval(refreshAll, REFRESH_MS);
 }
 
+function startThroughputRefresh() {
+    if (throughputInterval) clearInterval(throughputInterval);
+    throughputInterval = setInterval(refreshThroughput, THROUGHPUT_MS);
+}
+
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
         if (refreshInterval) { clearInterval(refreshInterval); refreshInterval = null; }
+        if (throughputInterval) { clearInterval(throughputInterval); throughputInterval = null; }
     } else {
         refreshAll();
+        refreshThroughput();
         startAutoRefresh();
+        startThroughputRefresh();
     }
 });
 
@@ -637,6 +700,100 @@ function updateSuccessFailChart(byType) {
     successFailChart.data.datasets[1].data = byType.map(t => t.failed);
     successFailChart.data.datasets[2].data = byType.map(t => t.error);
     successFailChart.update();
+}
+
+// ===== Sparkline Chart =====
+function initSparkline() {
+    const ctx = document.getElementById('sparklineChart').getContext('2d');
+    sparklineChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                data: [],
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59,130,246,0.15)',
+                fill: true,
+                tension: 0.4,
+                pointRadius: 0,
+                pointHitRadius: 0,
+                borderWidth: 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 300 },
+            plugins: { legend: { display: false }, tooltip: {
+                enabled: true,
+                mode: 'index',
+                intersect: false,
+                backgroundColor: '#1f2937',
+                titleColor: '#9ca3af',
+                bodyColor: '#fff',
+                borderColor: '#374151',
+                borderWidth: 1,
+                titleFont: { size: 10 },
+                bodyFont: { size: 12, weight: 'bold' },
+                padding: 8,
+                displayColors: false,
+                callbacks: {
+                    title: items => items[0]?.label || '',
+                    label: item => item.raw.toFixed(1) + ' req/sec',
+                }
+            }},
+            scales: {
+                x: { display: false },
+                y: { display: false, beginAtZero: true },
+            },
+            interaction: { mode: 'index', intersect: false },
+        },
+    });
+}
+
+// ===== Throughput Refresh (every 5s) =====
+async function refreshThroughput() {
+    const apiKey = document.getElementById('apiKey').value.trim();
+    if (!apiKey) return;
+
+    try {
+        const data = await dashApi('GET', '/analytics/throughput');
+        renderThroughput(data);
+    } catch (err) {
+        console.error('[Dashboard] Throughput fetch failed:', err.message);
+    }
+}
+
+function renderThroughput(data) {
+    // Update KPI numbers
+    const rpsEl = document.getElementById('liveRps');
+    rpsEl.textContent = data.current_rps.toFixed(1);
+    // Color based on throughput
+    if (data.current_rps >= 10) rpsEl.className = 'text-4xl font-bold text-emerald-400 tabular-nums';
+    else if (data.current_rps > 0) rpsEl.className = 'text-4xl font-bold text-blue-400 tabular-nums';
+    else rpsEl.className = 'text-4xl font-bold text-gray-500 tabular-nums';
+
+    document.getElementById('livePeak').textContent = data.peak_rps.toFixed(1);
+    document.getElementById('liveAvg').textContent = data.avg_rps.toFixed(1);
+    document.getElementById('live60s').textContent = data.total_last_60s.toLocaleString();
+    document.getElementById('live10m').textContent = data.total_last_10m.toLocaleString();
+
+    // Update live dot color
+    const dot = document.getElementById('liveDot');
+    dot.className = data.current_rps > 0
+        ? 'absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse-slow'
+        : 'absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-gray-500 rounded-full';
+
+    // Update sparkline
+    if (sparklineChart && data.buckets && data.buckets.length) {
+        const labels = data.buckets.map(b => {
+            const d = new Date(b.timestamp);
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        });
+        sparklineChart.data.labels = labels;
+        sparklineChart.data.datasets[0].data = data.buckets.map(b => b.rps);
+        sparklineChart.update('none');
+    }
 }
 
 // ===== Keyboard shortcut: Enter to save key =====
