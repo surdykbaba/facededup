@@ -34,6 +34,8 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "5432:5432"   # Exposed for worker nodes on private network
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
@@ -54,7 +56,9 @@ services:
     image: redis:7-alpine
     container_name: facededup-redis
     restart: always
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --bind 0.0.0.0 --protected-mode no
+    ports:
+      - "6379:6379"   # Exposed for worker nodes on private network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s

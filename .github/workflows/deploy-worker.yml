@@ -1,0 +1,94 @@
+name: Deploy Worker Node
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: worker-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Worker Server
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.WORKER_HOST }}
+          username: ${{ secrets.WORKER_USER }}
+          password: ${{ secrets.WORKER_PASSWORD }}
+          command_timeout: 15m
+          script: |
+            set -e
+            DEPLOY_DIR="/home/${{ secrets.WORKER_USER }}/facededup"
+
+            # Clone repo if first deployment
+            if [ ! -d "$DEPLOY_DIR" ]; then
+              echo "=== First deployment: cloning repo ==="
+              git clone https://github.com/surdykbaba/facededup.git "$DEPLOY_DIR"
+            fi
+
+            cd "$DEPLOY_DIR"
+
+            echo "=== Pulling latest code ==="
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "=== Configuring .env for worker node ==="
+            # Database: connect to primary server's PostgreSQL over private network
+            grep -q '^DATABASE_URL=' .env 2>/dev/null && sed -i 's|^DATABASE_URL=.*|DATABASE_URL=${{ secrets.WORKER_DATABASE_URL }}|' .env || echo 'DATABASE_URL=${{ secrets.WORKER_DATABASE_URL }}' >> .env
+            # Redis: connect to primary server's Redis over private network
+            grep -q '^REDIS_URL=' .env 2>/dev/null && sed -i 's|^REDIS_URL=.*|REDIS_URL=${{ secrets.WORKER_REDIS_URL }}|' .env || echo 'REDIS_URL=${{ secrets.WORKER_REDIS_URL }}' >> .env
+
+            # Copy same settings as primary server
+            grep -q '^RATE_LIMIT_REQUESTS=' .env && sed -i 's/^RATE_LIMIT_REQUESTS=.*/RATE_LIMIT_REQUESTS=6000/' .env || echo 'RATE_LIMIT_REQUESTS=6000' >> .env
+            grep -q '^BATCH_RATE_LIMIT_REQUESTS=' .env && sed -i 's/^BATCH_RATE_LIMIT_REQUESTS=.*/BATCH_RATE_LIMIT_REQUESTS=1000/' .env || echo 'BATCH_RATE_LIMIT_REQUESTS=1000' >> .env
+            grep -q '^BATCH_MAX_EMBEDDINGS=' .env && sed -i 's/^BATCH_MAX_EMBEDDINGS=.*/BATCH_MAX_EMBEDDINGS=5000/' .env || echo 'BATCH_MAX_EMBEDDINGS=5000' >> .env
+
+            # 35 workers × 2 ONNX threads = 70 cores
+            sed -i 's/^WORKERS=.*/WORKERS=35/' .env
+            grep -q '^WORKERS=' .env || echo 'WORKERS=35' >> .env
+            grep -q '^DB_POOL_SIZE=' .env && sed -i 's/^DB_POOL_SIZE=.*/DB_POOL_SIZE=5/' .env || echo 'DB_POOL_SIZE=5' >> .env
+            grep -q '^DB_MAX_OVERFLOW=' .env && sed -i 's/^DB_MAX_OVERFLOW=.*/DB_MAX_OVERFLOW=3/' .env || echo 'DB_MAX_OVERFLOW=3' >> .env
+            grep -q '^OMP_NUM_THREADS=' .env && sed -i 's/^OMP_NUM_THREADS=.*/OMP_NUM_THREADS=2/' .env || echo 'OMP_NUM_THREADS=2' >> .env
+            grep -q '^FACE_DET_SIZE=' .env && sed -i 's/^FACE_DET_SIZE=.*/FACE_DET_SIZE=320,320/' .env || echo 'FACE_DET_SIZE=320,320' >> .env
+
+            # Disable expensive checks for bulk enrollment
+            grep -q '^LIVENESS_ENROLL_REQUIRED=' .env && sed -i 's/^LIVENESS_ENROLL_REQUIRED=.*/LIVENESS_ENROLL_REQUIRED=False/' .env || echo 'LIVENESS_ENROLL_REQUIRED=False' >> .env
+            grep -q '^MULTIFRAME_ENROLL_REQUIRED=' .env && sed -i 's/^MULTIFRAME_ENROLL_REQUIRED=.*/MULTIFRAME_ENROLL_REQUIRED=False/' .env || echo 'MULTIFRAME_ENROLL_REQUIRED=False' >> .env
+            grep -q '^ANTISPOOF_ENABLED=' .env && sed -i 's/^ANTISPOOF_ENABLED=.*/ANTISPOOF_ENABLED=False/' .env || echo 'ANTISPOOF_ENABLED=False' >> .env
+            grep -q '^ENROLL_DEDUP_ENABLED=' .env && sed -i 's/^ENROLL_DEDUP_ENABLED=.*/ENROLL_DEDUP_ENABLED=False/' .env || echo 'ENROLL_DEDUP_ENABLED=False' >> .env
+            grep -q '^SIMILARITY_THRESHOLD=' .env && sed -i 's/^SIMILARITY_THRESHOLD=.*/SIMILARITY_THRESHOLD=0.6/' .env || echo 'SIMILARITY_THRESHOLD=0.6' >> .env
+
+            # API key (same as primary)
+            grep -q '^API_KEYS=' .env && sed -i 's/^API_KEYS=.*/API_KEYS=${{ secrets.API_KEYS }}/' .env || echo 'API_KEYS=${{ secrets.API_KEYS }}' >> .env
+
+            echo "=== .env config ==="
+            cat .env | grep -E 'DATABASE_URL|REDIS_URL|WORKERS|OMP_NUM|FACE_DET|LIVENESS|ANTISPOOF|DEDUP|RATE_LIMIT'
+
+            echo "=== Building Docker images ==="
+            docker compose -f docker-compose.worker.yaml build
+
+            echo "=== Starting worker services ==="
+            docker compose -f docker-compose.worker.yaml up -d --remove-orphans
+
+            echo "=== Waiting for API to be healthy (35 workers loading models ~3-5 min) ==="
+            for i in $(seq 1 150); do
+              if curl -sf http://localhost/api/v1/health > /dev/null 2>&1; then
+                echo "Worker API is healthy after $((i * 2)) seconds!"
+                break
+              fi
+              if [ "$i" -eq 150 ]; then
+                echo "ERROR: Worker API failed health check after 300 seconds"
+                docker compose -f docker-compose.worker.yaml logs --tail=100 api
+                exit 1
+              fi
+              sleep 2
+            done
+
+            echo "=== Worker deployment complete ==="
+            curl -s http://localhost/api/v1/health | python3 -m json.tool

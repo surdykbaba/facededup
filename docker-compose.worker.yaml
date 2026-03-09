@@ -1,0 +1,39 @@
+# Worker-only deployment for secondary servers.
+# Runs only the API + Nginx — no PostgreSQL or Redis.
+# Configure .env with DATABASE_URL and REDIS_URL pointing to the primary server.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: facededup-api
+    restart: always
+    env_file: .env
+    environment:
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-2}
+      - OPENBLAS_NUM_THREADS=${OMP_NUM_THREADS:-2}
+      - MKL_NUM_THREADS=${OMP_NUM_THREADS:-2}
+    volumes:
+      - image-data:/data/images
+      - spoof-data:/data/spoof_samples
+    deploy:
+      resources:
+        limits:
+          memory: 48G
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: facededup-nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d/worker.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+
+volumes:
+  image-data:
+  spoof-data:
