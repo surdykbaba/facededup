@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Fix idcentra-api on Server 2
         uses: appleboy/ssh-action@v1
+        env:
+          SUDO_PASS: ${{ secrets.WORKER_PASSWORD || secrets.DO_PASSWORD }}
         with:
           host: ${{ secrets.WORKER_HOST }}
           username: ${{ secrets.WORKER_USER }}
@@ -19,32 +21,68 @@ jobs:
           proxy_host: ${{ secrets.DO_HOST }}
           proxy_username: ${{ secrets.DO_USER }}
           proxy_password: ${{ secrets.DO_PASSWORD }}
+          envs: SUDO_PASS
           command_timeout: 3m
           script: |
             set -e
+            run_sudo() {
+              echo "$SUDO_PASS" | sudo -S "$@"
+            }
+
             IDCENTRA_DIR="/var/www/html/idcentra_be"
 
             echo "=== idcentra containers status ==="
             docker ps -a --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
             echo ""
-            echo "=== idcentra-api logs (last 30 lines) ==="
-            cd "$IDCENTRA_DIR"
-            docker compose logs --tail=30 idcentra-api 2>/dev/null || docker logs idcentra-api --tail=30 2>&1 || echo "No logs"
+            echo "=== Check port 15909 binding ==="
+            run_sudo ss -tlnp | grep 15909 || echo "Port 15909 NOT listening"
+            run_sudo ss -tlnp | grep -E '15909|docker' || echo "No docker ports on 15909"
 
             echo ""
-            echo "=== Restart idcentra-api ==="
+            echo "=== Check all listening ports ==="
+            run_sudo ss -tlnp | head -30
+
+            echo ""
+            echo "=== idcentra-api logs (last 50 lines) ==="
             cd "$IDCENTRA_DIR"
-            docker compose up -d 2>/dev/null || true
-            sleep 5
+            docker compose logs --tail=50 idcentra-api 2>/dev/null || docker logs idcentra-api --tail=50 2>&1 || echo "No logs"
+
+            echo ""
+            echo "=== Docker inspect idcentra-api port bindings ==="
+            docker inspect idcentra-api --format='{{json .NetworkSettings.Ports}}' 2>/dev/null || echo "Container not found"
+            docker inspect idcentra-api --format='{{.State.Status}} - {{.State.Error}}' 2>/dev/null || true
+
+            echo ""
+            echo "=== Fix tmp permissions and restart idcentra-api ==="
+            cd "$IDCENTRA_DIR"
+            run_sudo mkdir -p tmp
+            run_sudo chmod 777 tmp
+            docker compose down 2>/dev/null || true
+            docker compose up -d 2>/dev/null || run_sudo docker compose up -d
+            echo "Waiting 15s for idcentra-api to start..."
+            sleep 15
             docker ps -a --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
             echo ""
-            echo "=== Test idcentra-api on port 15909 ==="
-            curl -sf --max-time 5 http://127.0.0.1:15909/ 2>&1 | head -5 || echo "Port 15909 not responding"
-            curl -v --max-time 5 http://127.0.0.1:15909/ 2>&1 | head -10 || true
+            echo "=== idcentra-api logs after restart ==="
+            docker compose logs --tail=30 idcentra-api 2>/dev/null || docker logs idcentra-api --tail=30 2>&1 || echo "No logs"
 
-      - name: Reload nginx + verify on Server 1
+            echo ""
+            echo "=== Check port 15909 after restart ==="
+            run_sudo ss -tlnp | grep 15909 || echo "Port 15909 still NOT listening"
+
+            echo ""
+            echo "=== Test idcentra-api locally ==="
+            curl -v --max-time 10 http://127.0.0.1:15909/ 2>&1 | head -15 || echo "Port 15909 not responding locally"
+            curl -v --max-time 10 http://0.0.0.0:15909/ 2>&1 | head -15 || echo "Port 15909 not responding on 0.0.0.0"
+
+            echo ""
+            echo "=== Firewall status ==="
+            run_sudo ufw status verbose 2>/dev/null || echo "UFW not available"
+            run_sudo iptables -L INPUT -n --line-numbers 2>/dev/null | head -20 || true
+
+      - name: Test from Server 1
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DO_HOST }}
@@ -53,20 +91,12 @@ jobs:
           command_timeout: 3m
           script: |
             set -e
-            echo "=== Reload nginx config ==="
-            docker exec facededup-nginx nginx -s reload 2>&1
-
-            echo ""
-            echo "=== Verify nginx config for idcentra ==="
-            docker exec facededup-nginx cat /etc/nginx/conf.d/rhwdp.conf 2>&1
-
-            echo ""
             echo "=== Test connectivity to 10.8.1.14:15909 ==="
-            curl -v --max-time 5 http://10.8.1.14:15909/ 2>&1 | head -10 || echo "Can't reach 10.8.1.14:15909"
+            curl -v --max-time 10 http://10.8.1.14:15909/ 2>&1 | head -15 || echo "Can't reach 10.8.1.14:15909"
 
             echo ""
             echo "=== Test idcentra.com via nginx ==="
-            curl -v --max-time 5 -H "Host: idcentra.com" http://127.0.0.1/ 2>&1 | head -15 || echo "FAILED"
+            curl -v --max-time 10 -H "Host: idcentra.com" http://127.0.0.1/ 2>&1 | head -15 || echo "FAILED"
 
             echo ""
             echo "=== Test api.rhwdp.gov.ng via nginx ==="
