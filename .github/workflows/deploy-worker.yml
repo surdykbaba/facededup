@@ -69,14 +69,19 @@ jobs:
             IDCENTRA_DIR="/var/www/html/idcentra_be"
             if [ -d "$IDCENTRA_DIR" ] && [ -f "$IDCENTRA_DIR/docker-compose.yml" ]; then
               cd "$IDCENTRA_DIR"
-              if docker ps --filter "name=idcentra-api" --format "{{.Names}}" | grep -q "idcentra-api"; then
+              # Fix permissions: idcentra-api needs /app/tmp writable
+              mkdir -p tmp
+              chmod 777 tmp
+              if docker ps --filter "name=idcentra-api" --filter "status=running" --format "{{.Names}}" | grep -q "idcentra-api"; then
                 echo "idcentra-api already running"
               else
                 echo "Starting idcentra containers..."
+                docker compose down 2>/dev/null || true
                 docker compose up -d 2>/dev/null || run_sudo docker compose up -d
+                sleep 5
                 echo "idcentra containers started"
               fi
-              docker ps --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+              docker ps -a --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
               cd "$DEPLOY_DIR"
             else
               echo "WARNING: idcentra_be directory not found at $IDCENTRA_DIR"
