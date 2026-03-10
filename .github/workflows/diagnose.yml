@@ -10,7 +10,73 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Diagnose via SSH
+      - name: Diagnose Server 2 (Worker) for idcentra_be
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.WORKER_HOST }}
+          username: ${{ secrets.WORKER_USER }}
+          password: ${{ secrets.WORKER_PASSWORD }}
+          proxy_host: ${{ secrets.DO_HOST }}
+          proxy_username: ${{ secrets.DO_USER }}
+          proxy_password: ${{ secrets.DO_PASSWORD }}
+          command_timeout: 3m
+          script: |
+            set -e
+            echo "=========================================="
+            echo "=== SERVER 2 (Worker) — idcentra_be search ==="
+            echo "=========================================="
+
+            echo ""
+            echo "=== ALL containers (running + stopped) ==="
+            docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}" 2>/dev/null || sudo docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
+
+            echo ""
+            echo "=== Search for idcentra containers ==="
+            docker ps -a --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}" 2>/dev/null || sudo docker ps -a --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
+
+            echo ""
+            echo "=== Docker images (all) ==="
+            docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" 2>/dev/null || sudo docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
+
+            echo ""
+            echo "=== Search for idcentra directories ==="
+            find / -maxdepth 4 -type d -iname "*idcentra*" 2>/dev/null | head -10 || echo "No idcentra dirs"
+
+            echo ""
+            echo "=== All docker-compose files ==="
+            find /home /root /opt /srv -maxdepth 4 \( -name "docker-compose*" -o -name "compose.yaml" -o -name "compose.yml" \) 2>/dev/null | head -20
+
+            echo ""
+            echo "=== Read any idcentra compose file ==="
+            for f in $(find / -maxdepth 5 -type f \( -name "docker-compose*" -o -name "compose.yaml" -o -name "compose.yml" \) 2>/dev/null | head -20); do
+              if grep -qi "idcentra" "$f" 2>/dev/null; then
+                echo "--- FOUND idcentra in: $f ---"
+                cat "$f"
+                echo ""
+              fi
+            done
+
+            echo ""
+            echo "=== Search for any _be service in compose files ==="
+            for f in $(find / -maxdepth 5 -type f \( -name "docker-compose*" -o -name "compose.yaml" -o -name "compose.yml" \) 2>/dev/null | head -20); do
+              echo "--- $f ---"
+              cat "$f" 2>/dev/null
+              echo ""
+            done
+
+            echo ""
+            echo "=== Processes listening on ports ==="
+            ss -tlnp 2>/dev/null | head -20
+
+            echo ""
+            echo "=== Home directories ==="
+            ls -la /home/ 2>/dev/null
+            for d in /home/*/; do
+              echo "--- $d ---"
+              ls "$d" 2>/dev/null | head -15
+            done
+
+      - name: Diagnose Server 1 (Primary) status
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DO_HOST }}
@@ -19,59 +85,17 @@ jobs:
           command_timeout: 3m
           script: |
             set -e
-            echo "=== ALL containers (running + stopped) ==="
-            docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
+            echo "=========================================="
+            echo "=== SERVER 1 (Primary) — Quick status ==="
+            echo "=========================================="
 
             echo ""
-            echo "=== Search for idcentra directories ==="
-            find / -maxdepth 4 -type d -iname "*idcentra*" 2>/dev/null | head -10 || echo "No idcentra dirs"
+            echo "=== Containers ==="
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | head -10
 
             echo ""
-            echo "=== All docker-compose files and their services ==="
-            for f in $(find /home /root /opt /srv -maxdepth 4 -name "docker-compose*" -o -name "compose.yaml" -o -name "compose.yml" 2>/dev/null); do
-              echo "--- $f ---"
-              grep -E "^\s*(services:|[a-zA-Z_-]+:$|image:|container_name:|ports:)" "$f" 2>/dev/null | head -20
-              echo ""
-            done
-
-            echo ""
-            echo "=== Docker images (all) ==="
-            docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" | head -20
-
-            echo ""
-            echo "=== Docker networks ==="
-            docker network ls
-
-            echo ""
-            echo "=== Search for idcentra_be in docker history ==="
-            docker ps -a --filter "name=idcentra" --format "{{.Names}} {{.Status}} {{.Image}}" || echo "None"
-            docker images | grep -i "idcentra" || echo "No idcentra images"
-
-            echo ""
-            echo "=== Grep ALL compose files for 'idcentra' or '_be' ==="
-            grep -rn "idcentra\|_be" /home/*/rhwdp/ /home/*/idcentra/ 2>/dev/null | head -20 || echo "Nothing found"
-
-            echo ""
-            echo "=== List /home directories ==="
-            ls -la /home/*/ 2>/dev/null | head -20
-
-            echo ""
-            echo "=== Check rh-backend docker-compose ==="
-            cat /home/*/rhwdp/rh-backend/docker-compose.yml 2>/dev/null || echo "Not found"
-
-            echo ""
-            echo "=== Processes listening on ALL ports ==="
-            ss -tlnp 2>/dev/null | head -20
-
-            echo ""
-            echo "=== Test both backends ==="
-            echo "Port 5000 (rh-backend):"
-            curl -sf --max-time 3 http://127.0.0.1:5000/ 2>&1 | head -3 || echo "FAILED"
-            echo ""
-            echo "Common idcentra ports (3000, 4000, 8080, 8000, 9000):"
-            for port in 3000 4000 8080 9000; do
-              result=$(curl -sf --max-time 2 http://127.0.0.1:$port/ 2>&1 | head -1) && echo "Port $port: $result" || true
-            done
+            echo "=== Test idcentra.com via nginx ==="
+            curl -sf --max-time 3 -H "Host: idcentra.com" http://127.0.0.1/ 2>&1 | head -3 || echo "FAILED"
 
             echo ""
             echo "=== Nginx config test ==="
