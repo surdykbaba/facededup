@@ -53,13 +53,34 @@ jobs:
             if command -v ufw &> /dev/null && run_sudo ufw status | grep -q "active"; then
               run_sudo ufw allow from 10.8.1.10 to any port 80 proto tcp comment "Server 1 LB" 2>/dev/null || true
               run_sudo ufw allow from 10.8.1.10 to any port 8000 proto tcp comment "Server 1 LB direct" 2>/dev/null || true
+              run_sudo ufw allow from 10.8.1.10 to any port 15909 proto tcp comment "Server 1 LB idcentra" 2>/dev/null || true
               run_sudo ufw reload 2>/dev/null || true
               echo "UFW rules added"
             fi
             # Also set iptables directly in case ufw is not managing rules
             run_sudo iptables -C INPUT -p tcp --dport 80 -s 10.8.1.10 -j ACCEPT 2>/dev/null || \
               run_sudo iptables -I INPUT 1 -p tcp --dport 80 -s 10.8.1.10 -j ACCEPT 2>/dev/null || true
-            echo "Firewall configured for port 80 from 10.8.1.10"
+            run_sudo iptables -C INPUT -p tcp --dport 15909 -s 10.8.1.10 -j ACCEPT 2>/dev/null || \
+              run_sudo iptables -I INPUT 1 -p tcp --dport 15909 -s 10.8.1.10 -j ACCEPT 2>/dev/null || true
+            echo "Firewall configured for ports 80,15909 from 10.8.1.10"
+
+            # Start idcentra_be if not running (lives on this server)
+            echo "=== Starting idcentra_be containers ==="
+            IDCENTRA_DIR="/var/www/html/idcentra_be"
+            if [ -d "$IDCENTRA_DIR" ] && [ -f "$IDCENTRA_DIR/docker-compose.yml" ]; then
+              cd "$IDCENTRA_DIR"
+              if docker ps --filter "name=idcentra-api" --format "{{.Names}}" | grep -q "idcentra-api"; then
+                echo "idcentra-api already running"
+              else
+                echo "Starting idcentra containers..."
+                docker compose up -d 2>/dev/null || run_sudo docker compose up -d
+                echo "idcentra containers started"
+              fi
+              docker ps --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+              cd "$DEPLOY_DIR"
+            else
+              echo "WARNING: idcentra_be directory not found at $IDCENTRA_DIR"
+            fi
 
             # Install Docker if not present
             if ! command -v docker &> /dev/null; then
