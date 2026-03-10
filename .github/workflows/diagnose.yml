@@ -19,45 +19,41 @@ jobs:
           command_timeout: 3m
           script: |
             set -e
-            echo "=== Container status ==="
-            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            echo "=== All containers ==="
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
 
             echo ""
-            echo "=== Nginx error log (last 20) ==="
-            docker logs facededup-nginx --tail=20 2>&1 || echo "No logs"
+            echo "=== All services listening on ports ==="
+            ss -tlnp | head -30
 
             echo ""
-            echo "=== Nginx config test ==="
-            docker exec facededup-nginx nginx -t 2>&1 || echo "Config test failed"
+            echo "=== Check for idcentra in Docker ==="
+            docker ps -a --format "{{.Names}} {{.Image}} {{.Ports}}" | grep -i "idcent\|rh-\|backend\|front\|web\|app\|node\|next\|react" || echo "No obvious idcentra containers found"
 
             echo ""
-            echo "=== Test: can nginx reach Server 2? ==="
-            docker exec facededup-nginx wget -q -O - --timeout=5 http://10.8.1.14/api/v1/health 2>&1 || echo "FAILED to reach Server 2 from nginx container"
+            echo "=== Check for idcentra in systemd ==="
+            systemctl list-units --type=service --state=running 2>/dev/null | grep -i "idcent\|node\|next\|pm2\|web\|app" || echo "No matching systemd services"
 
             echo ""
-            echo "=== Test: can HOST reach Server 2? ==="
-            curl -sf --max-time 5 http://10.8.1.14/api/v1/health 2>&1 || echo "FAILED to reach Server 2 from host"
+            echo "=== Check pm2 processes ==="
+            pm2 list 2>/dev/null || echo "pm2 not running"
 
             echo ""
-            echo "=== Test: local API on port 8000 ==="
-            curl -sf --max-time 5 http://127.0.0.1:8000/api/v1/health 2>&1 || echo "FAILED to reach local API on 8000"
+            echo "=== Check nginx configs for idcentra ==="
+            find /etc/nginx -name "*.conf" -exec grep -l "idcentra" {} \; 2>/dev/null || echo "No nginx configs mention idcentra"
 
             echo ""
-            echo "=== Test: nginx on port 80 ==="
-            curl -sf --max-time 5 http://127.0.0.1/api/v1/health 2>&1 || echo "FAILED to reach nginx on port 80"
+            echo "=== Check system nginx config ==="
+            cat /etc/nginx/sites-enabled/* 2>/dev/null || echo "No sites-enabled"
 
             echo ""
-            echo "=== Nginx upstream status (access log last 10) ==="
-            docker logs facededup-nginx --tail=10 2>&1 | grep -E "upstream|502|503|504" || echo "No upstream errors found"
+            echo "=== Docker networks ==="
+            docker network ls
 
             echo ""
-            echo "=== Network: host can reach 10.8.1.14? ==="
-            ping -c 2 -W 2 10.8.1.14 2>&1 || echo "Ping failed"
+            echo "=== Inspect rh-backend container ==="
+            docker inspect rh-backend --format '{{.Config.Image}} {{.NetworkSettings.Ports}} {{json .Config.Env}}' 2>/dev/null || echo "rh-backend not found"
 
             echo ""
-            echo "=== netstat: who's listening on port 80? ==="
-            ss -tlnp | grep ':80 ' || echo "Nothing on port 80"
-
-            echo ""
-            echo "=== netstat: who's listening on port 8000? ==="
-            ss -tlnp | grep ':8000 ' || echo "Nothing on port 8000"
+            echo "=== Check all listening ports ==="
+            ss -tlnp
