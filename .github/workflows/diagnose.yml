@@ -7,10 +7,10 @@ jobs:
   diagnose:
     name: Check nginx + load balancer
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
-      - name: Fix idcentra-api on Server 2
+      - name: Fix and wait for idcentra-api on Server 2
         uses: appleboy/ssh-action@v1
         env:
           SUDO_PASS: ${{ secrets.WORKER_PASSWORD || secrets.DO_PASSWORD }}
@@ -22,7 +22,7 @@ jobs:
           proxy_username: ${{ secrets.DO_USER }}
           proxy_password: ${{ secrets.DO_PASSWORD }}
           envs: SUDO_PASS
-          command_timeout: 3m
+          command_timeout: 5m
           script: |
             set -e
             run_sudo() {
@@ -32,21 +32,15 @@ jobs:
             IDCENTRA_DIR="/var/www/html/idcentra_be"
             cd "$IDCENTRA_DIR"
 
-            echo "=== Fix permissions ==="
+            # Fix permissions
             run_sudo mkdir -p tmp
             run_sudo chmod 777 tmp
 
-            echo "=== Patch docker-compose.yml for host networking ==="
-            # Add network_mode: host if not present
+            # Ensure network_mode: host is set
             if ! grep -q 'network_mode' docker-compose.yml; then
               run_sudo sed -i '/container_name: idcentra-api/a\    network_mode: "host"' docker-compose.yml
-            fi
-
-            # Remove all lines containing 15909 port mappings
-            run_sudo sed -i '/15909/d' docker-compose.yml
-
-            # Remove orphaned empty ports: keys using Python
-            run_sudo python3 -c "
+              run_sudo sed -i '/15909/d' docker-compose.yml
+              run_sudo python3 -c "
             with open('docker-compose.yml') as f:
                 lines = f.readlines()
             result = []
@@ -67,33 +61,47 @@ jobs:
             with open('docker-compose.yml', 'w') as f:
                 f.writelines(result)
             "
+              echo "Patched docker-compose.yml"
+            fi
 
-            echo "=== docker-compose.yml ==="
-            cat docker-compose.yml
-
-            echo ""
+            # Restart containers
             echo "=== Restarting idcentra containers ==="
             docker compose down 2>/dev/null || true
             docker compose up -d 2>/dev/null || run_sudo docker compose up -d
-            echo "Waiting 25s for Go app to build and start..."
-            sleep 25
+
+            # Wait for Go app to build and start (Air compilation can take 60-90s)
+            echo "=== Waiting for idcentra-api to build and start (up to 120s) ==="
+            for i in $(seq 1 24); do
+              if curl -sf --max-time 3 http://127.0.0.1:15909/ > /dev/null 2>&1; then
+                echo "idcentra-api is responding after $((i * 5)) seconds!"
+                break
+              fi
+              if [ "$i" -eq 24 ]; then
+                echo "idcentra-api NOT responding after 120 seconds"
+              fi
+              if [ $((i % 6)) -eq 0 ]; then
+                echo "--- Check $i/24 ($((i * 5))s) ---"
+                docker compose logs --tail=5 idcentra-api 2>/dev/null || true
+                run_sudo ss -tlnp | grep 15909 || echo "Port 15909 not listening yet"
+              fi
+              sleep 5
+            done
 
             echo ""
             echo "=== Container status ==="
             docker ps -a --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
             echo ""
-            echo "=== idcentra-api logs ==="
-            docker compose logs --tail=30 idcentra-api 2>/dev/null || docker logs idcentra-api --tail=30 2>&1 || echo "No logs"
+            echo "=== idcentra-api logs (last 40 lines) ==="
+            docker compose logs --tail=40 idcentra-api 2>/dev/null || docker logs idcentra-api --tail=40 2>&1 || echo "No logs"
 
             echo ""
-            echo "=== Check port 15909 ==="
+            echo "=== Port 15909 binding ==="
             run_sudo ss -tlnp | grep 15909 || echo "Port 15909 NOT listening"
 
             echo ""
             echo "=== Test locally ==="
             curl -sf --max-time 10 http://127.0.0.1:15909/ 2>&1 | head -5 || echo "Port 15909 not responding"
-            curl -v --max-time 10 http://127.0.0.1:15909/ 2>&1 | head -10 || true
 
       - name: Test from Server 1
         uses: appleboy/ssh-action@v1
