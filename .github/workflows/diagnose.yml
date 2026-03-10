@@ -70,15 +70,18 @@ jobs:
             curl -sf --max-time 5 http://127.0.0.1:5000/ 2>&1 | head -5 || echo "Port 5000 returned error/empty"
 
             echo ""
-            echo "=== SSL certs available ==="
-            ls -la /etc/letsencrypt/live/ 2>/dev/null || echo "No letsencrypt certs"
-            ls -la /etc/letsencrypt/live/idcentra.com/ 2>/dev/null || echo "No idcentra.com cert"
-            ls -la /etc/letsencrypt/live/www.idcentra.com/ 2>/dev/null || echo "No www.idcentra.com cert"
+            echo "=== Self-signed cert for idcentra.com ==="
+            ls -la ~/facededup/nginx/ssl/ 2>/dev/null || echo "No nginx/ssl/ directory"
+            docker exec facededup-nginx ls -la /etc/nginx/ssl/ 2>/dev/null || echo "No /etc/nginx/ssl/ in container"
 
             echo ""
-            echo "=== Test HTTPS idcentra.com ==="
-            curl -sk --max-time 5 https://idcentra.com 2>&1 | head -5 || echo "HTTPS idcentra.com FAILED"
-            curl -vsk --max-time 5 https://idcentra.com 2>&1 | grep -E "subject:|issuer:|SSL" | head -5 || echo "No SSL info"
+            echo "=== Test HTTPS idcentra.com directly on localhost (bypass Cloudflare) ==="
+            curl -sk --max-time 5 -H "Host: idcentra.com" https://127.0.0.1/ 2>&1 | head -5 || echo "HTTPS idcentra.com on localhost FAILED"
+            curl -vsk --max-time 5 -H "Host: idcentra.com" https://127.0.0.1/ 2>&1 | grep -E "subject:|issuer:|SSL|error" | head -5 || echo "No SSL info"
+
+            echo ""
+            echo "=== Test HTTPS api.rhwdp.gov.ng directly on localhost ==="
+            curl -sk --max-time 5 -H "Host: api.rhwdp.gov.ng" https://127.0.0.1/ 2>&1 | head -5 || echo "HTTPS api.rhwdp on localhost FAILED"
 
             echo ""
             echo "=== Nginx config test ==="
