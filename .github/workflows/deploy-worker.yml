@@ -78,14 +78,38 @@ jobs:
               # Patch docker-compose.yml: add network_mode: host and remove ports for idcentra-api
               if ! grep -q 'network_mode' docker-compose.yml; then
                 echo "Patching docker-compose.yml for host networking..."
-                # Add network_mode: host after container_name: idcentra-api
                 run_sudo sed -i '/container_name: idcentra-api/a\    network_mode: "host"' docker-compose.yml
-                # Comment out the ports section for idcentra-api (15909 mapping)
-                run_sudo sed -i 's/^\(\s*\)- "15909:15909"/\1# - "15909:15909"  # not needed with network_mode: host/' docker-compose.yml
-                echo "docker-compose.yml patched"
-              else
-                echo "docker-compose.yml already has network_mode"
               fi
+              # Remove all lines containing 15909 (only idcentra-api uses this port)
+              run_sudo sed -i '/15909/d' docker-compose.yml
+              # Remove any orphaned "ports:" key with no list items after it
+              # (ports: followed by a line that doesn't start with "  -" or a comment about ports)
+              run_sudo python3 -c "
+import re
+with open('docker-compose.yml') as f:
+    lines = f.readlines()
+result = []
+skip_next_empty_ports = False
+for i, line in enumerate(lines):
+    stripped = line.strip()
+    if stripped == 'ports:':
+        # Check if next non-empty line is a list item
+        has_items = False
+        for j in range(i+1, len(lines)):
+            next_stripped = lines[j].strip()
+            if not next_stripped:
+                continue
+            if next_stripped.startswith('-'):
+                has_items = True
+            break
+        if not has_items:
+            continue  # skip empty ports: key
+    result.append(line)
+with open('docker-compose.yml', 'w') as f:
+    f.writelines(result)
+"
+              echo "docker-compose.yml configured for host networking"
+              cat docker-compose.yml
 
               if docker ps --filter "name=idcentra-api" --filter "status=running" --format "{{.Names}}" | grep -q "idcentra-api"; then
                 # Check if idcentra-api is actually healthy (not crash-looping)

@@ -32,37 +32,51 @@ jobs:
             IDCENTRA_DIR="/var/www/html/idcentra_be"
             cd "$IDCENTRA_DIR"
 
-            echo "=== Current docker-compose.yml ==="
-            cat docker-compose.yml
-
-            echo ""
-            echo "=== Fix: Add network_mode host for idcentra-api ==="
-            # Fix permissions
+            echo "=== Fix permissions ==="
             run_sudo mkdir -p tmp
             run_sudo chmod 777 tmp
 
-            # Patch docker-compose.yml to use host networking
-            # idcentra-api tries to connect to localhost:5432 (native PostgreSQL)
-            # but Docker bridge network isolates localhost
+            echo "=== Patch docker-compose.yml for host networking ==="
+            # Add network_mode: host if not present
             if ! grep -q 'network_mode' docker-compose.yml; then
-              echo "Patching docker-compose.yml..."
               run_sudo sed -i '/container_name: idcentra-api/a\    network_mode: "host"' docker-compose.yml
-              run_sudo sed -i 's/^\(\s*\)- "15909:15909"/\1# - "15909:15909"/' docker-compose.yml
-              echo "Patched!"
-            else
-              echo "Already has network_mode"
             fi
 
-            echo ""
-            echo "=== Patched docker-compose.yml ==="
+            # Remove all lines containing 15909 port mappings
+            run_sudo sed -i '/15909/d' docker-compose.yml
+
+            # Remove orphaned empty ports: keys using Python
+            run_sudo python3 -c "
+            with open('docker-compose.yml') as f:
+                lines = f.readlines()
+            result = []
+            for i, line in enumerate(lines):
+                stripped = line.strip()
+                if stripped == 'ports:':
+                    has_items = False
+                    for j in range(i+1, len(lines)):
+                        next_stripped = lines[j].strip()
+                        if not next_stripped:
+                            continue
+                        if next_stripped.startswith('-'):
+                            has_items = True
+                        break
+                    if not has_items:
+                        continue
+                result.append(line)
+            with open('docker-compose.yml', 'w') as f:
+                f.writelines(result)
+            "
+
+            echo "=== docker-compose.yml ==="
             cat docker-compose.yml
 
             echo ""
             echo "=== Restarting idcentra containers ==="
             docker compose down 2>/dev/null || true
             docker compose up -d 2>/dev/null || run_sudo docker compose up -d
-            echo "Waiting 20s for Go app to build and start..."
-            sleep 20
+            echo "Waiting 25s for Go app to build and start..."
+            sleep 25
 
             echo ""
             echo "=== Container status ==="
@@ -70,7 +84,7 @@ jobs:
 
             echo ""
             echo "=== idcentra-api logs ==="
-            docker compose logs --tail=40 idcentra-api 2>/dev/null || docker logs idcentra-api --tail=40 2>&1 || echo "No logs"
+            docker compose logs --tail=30 idcentra-api 2>/dev/null || docker logs idcentra-api --tail=30 2>&1 || echo "No logs"
 
             echo ""
             echo "=== Check port 15909 ==="
@@ -78,7 +92,8 @@ jobs:
 
             echo ""
             echo "=== Test locally ==="
-            curl -v --max-time 10 http://127.0.0.1:15909/ 2>&1 | head -15 || echo "Port 15909 not responding"
+            curl -sf --max-time 10 http://127.0.0.1:15909/ 2>&1 | head -5 || echo "Port 15909 not responding"
+            curl -v --max-time 10 http://127.0.0.1:15909/ 2>&1 | head -10 || true
 
       - name: Test from Server 1
         uses: appleboy/ssh-action@v1
