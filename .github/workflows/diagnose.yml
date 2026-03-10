@@ -10,7 +10,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Diagnose Server 2 (Worker) for idcentra_be
+      - name: Verify idcentra on Server 2
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.WORKER_HOST }}
@@ -22,61 +22,20 @@ jobs:
           command_timeout: 3m
           script: |
             set -e
-            echo "=========================================="
-            echo "=== SERVER 2 (Worker) — idcentra_be search ==="
-            echo "=========================================="
+            echo "=== Server 2: idcentra containers ==="
+            docker ps --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
             echo ""
-            echo "=== ALL containers (running + stopped) ==="
-            docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}" 2>/dev/null || sudo docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
+            echo "=== Test idcentra-api on port 15909 ==="
+            curl -sf --max-time 5 http://127.0.0.1:15909/ 2>&1 | head -5 || echo "Port 15909 FAILED or returned error"
 
             echo ""
-            echo "=== Search for idcentra containers ==="
-            docker ps -a --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}" 2>/dev/null || sudo docker ps -a --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
+            echo "=== Test idcentra-api health/readiness ==="
+            curl -sf --max-time 5 http://127.0.0.1:15909/health 2>&1 | head -5 || echo "No /health endpoint"
+            curl -sf --max-time 5 http://127.0.0.1:15909/api 2>&1 | head -5 || echo "No /api endpoint"
+            curl -sf --max-time 5 http://127.0.0.1:15909/api/v1 2>&1 | head -5 || echo "No /api/v1 endpoint"
 
-            echo ""
-            echo "=== Docker images (all) ==="
-            docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" 2>/dev/null || sudo docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
-
-            echo ""
-            echo "=== Search for idcentra directories ==="
-            find / -maxdepth 4 -type d -iname "*idcentra*" 2>/dev/null | head -10 || echo "No idcentra dirs"
-
-            echo ""
-            echo "=== All docker-compose files ==="
-            find /home /root /opt /srv -maxdepth 4 \( -name "docker-compose*" -o -name "compose.yaml" -o -name "compose.yml" \) 2>/dev/null | head -20
-
-            echo ""
-            echo "=== Read any idcentra compose file ==="
-            for f in $(find / -maxdepth 5 -type f \( -name "docker-compose*" -o -name "compose.yaml" -o -name "compose.yml" \) 2>/dev/null | head -20); do
-              if grep -qi "idcentra" "$f" 2>/dev/null; then
-                echo "--- FOUND idcentra in: $f ---"
-                cat "$f"
-                echo ""
-              fi
-            done
-
-            echo ""
-            echo "=== Search for any _be service in compose files ==="
-            for f in $(find / -maxdepth 5 -type f \( -name "docker-compose*" -o -name "compose.yaml" -o -name "compose.yml" \) 2>/dev/null | head -20); do
-              echo "--- $f ---"
-              cat "$f" 2>/dev/null
-              echo ""
-            done
-
-            echo ""
-            echo "=== Processes listening on ports ==="
-            ss -tlnp 2>/dev/null | head -20
-
-            echo ""
-            echo "=== Home directories ==="
-            ls -la /home/ 2>/dev/null
-            for d in /home/*/; do
-              echo "--- $d ---"
-              ls "$d" 2>/dev/null | head -15
-            done
-
-      - name: Diagnose Server 1 (Primary) status
+      - name: Verify nginx proxy on Server 1
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DO_HOST }}
@@ -85,17 +44,28 @@ jobs:
           command_timeout: 3m
           script: |
             set -e
-            echo "=========================================="
-            echo "=== SERVER 1 (Primary) — Quick status ==="
-            echo "=========================================="
+            echo "=== Server 1: containers ==="
+            docker ps --format "table {{.Names}}\t{{.Status}}" | head -10
 
             echo ""
-            echo "=== Containers ==="
-            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | head -10
+            echo "=== Test connectivity to idcentra-api on Server 2 ==="
+            curl -sf --max-time 5 http://10.8.1.14:15909/ 2>&1 | head -5 || echo "FAILED: Can't reach 10.8.1.14:15909"
 
             echo ""
-            echo "=== Test idcentra.com via nginx ==="
-            curl -sf --max-time 3 -H "Host: idcentra.com" http://127.0.0.1/ 2>&1 | head -3 || echo "FAILED"
+            echo "=== Test idcentra.com via nginx (port 80) ==="
+            curl -sf --max-time 5 -H "Host: idcentra.com" http://127.0.0.1/ 2>&1 | head -5 || echo "FAILED"
+
+            echo ""
+            echo "=== Test idcentra.com via nginx (port 443) ==="
+            curl -sk --max-time 5 -H "Host: idcentra.com" https://127.0.0.1/ 2>&1 | head -5 || echo "FAILED"
+
+            echo ""
+            echo "=== Test api.rhwdp.gov.ng via nginx ==="
+            curl -sk --max-time 5 -H "Host: api.rhwdp.gov.ng" https://127.0.0.1/ 2>&1 | head -5 || echo "FAILED"
+
+            echo ""
+            echo "=== Test facededup API ==="
+            curl -sf --max-time 5 http://127.0.0.1/api/v1/health 2>&1 | head -3 || echo "FAILED"
 
             echo ""
             echo "=== Nginx config test ==="
