@@ -80,6 +80,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       - api
 

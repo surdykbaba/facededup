@@ -59,6 +59,19 @@ jobs:
             grep -q '^WORKER_URLS=' .env && sed -i 's|^WORKER_URLS=.*|WORKER_URLS=http://10.8.1.14|' .env || echo 'WORKER_URLS=http://10.8.1.14' >> .env
             cat .env | grep -E 'RATE_LIMIT|BATCH|WORKERS|POOL|LIVENESS|ANTISPOOF|DEDUP|SIMILARITY|OMP_NUM|FACE_DET|WORKER_URLS'
 
+            echo "=== Generate self-signed cert for idcentra.com (Cloudflare terminates real SSL) ==="
+            mkdir -p nginx/ssl
+            if [ ! -f nginx/ssl/idcentra.com.crt ]; then
+              openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+                -keyout nginx/ssl/idcentra.com.key \
+                -out nginx/ssl/idcentra.com.crt \
+                -subj "/CN=idcentra.com" \
+                -addext "subjectAltName=DNS:idcentra.com,DNS:www.idcentra.com"
+              echo "Generated self-signed cert for idcentra.com"
+            else
+              echo "Self-signed cert for idcentra.com already exists"
+            fi
+
             echo "=== Building Docker images ==="
             docker compose -f docker-compose.prod.yaml build
 

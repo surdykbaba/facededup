@@ -51,3 +51,6 @@ training/logs/
 
 # Docker
 *.log
+
+# Generated SSL certs
+nginx/ssl/
