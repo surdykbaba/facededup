@@ -23,65 +23,55 @@ jobs:
             docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
 
             echo ""
-            echo "=== Search for idcentra_be everywhere ==="
-            docker ps -a --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}" || echo "No containers matching 'idcentra'"
-            docker ps -a --filter "name=_be" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}" || echo "No containers matching '_be'"
+            echo "=== Search for idcentra directories ==="
+            find / -maxdepth 4 -type d -iname "*idcentra*" 2>/dev/null | head -10 || echo "No idcentra dirs"
 
             echo ""
-            echo "=== Docker images containing idcentra ==="
-            docker images | grep -i idcent || echo "No idcentra images found"
+            echo "=== All docker-compose files and their services ==="
+            for f in $(find /home /root /opt /srv -maxdepth 4 -name "docker-compose*" -o -name "compose.yaml" -o -name "compose.yml" 2>/dev/null); do
+              echo "--- $f ---"
+              grep -E "^\s*(services:|[a-zA-Z_-]+:$|image:|container_name:|ports:)" "$f" 2>/dev/null | head -20
+              echo ""
+            done
 
             echo ""
-            echo "=== Docker compose files on the entire system ==="
-            find / -maxdepth 5 -name "docker-compose*" -o -name "compose.yaml" -o -name "compose.yml" 2>/dev/null | head -20
+            echo "=== Docker images (all) ==="
+            docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" | head -20
 
             echo ""
-            echo "=== Docker compose files containing idcentra ==="
-            grep -rl "idcentra" /home /root /opt /srv /var 2>/dev/null | head -10 || echo "No files containing 'idcentra' found"
+            echo "=== Docker networks ==="
+            docker network ls
 
             echo ""
-            echo "=== System nginx config (if exists) ==="
-            cat /etc/nginx/sites-enabled/* 2>/dev/null | head -40 || echo "No system nginx sites-enabled"
-            cat /etc/nginx/conf.d/* 2>/dev/null | head -40 || echo "No system nginx conf.d"
+            echo "=== Search for idcentra_be in docker history ==="
+            docker ps -a --filter "name=idcentra" --format "{{.Names}} {{.Status}} {{.Image}}" || echo "None"
+            docker images | grep -i "idcentra" || echo "No idcentra images"
 
             echo ""
-            echo "=== Processes listening on ports ==="
-            ss -tlnp | grep -E ':80|:443|:5000|:8080|:3000' || echo "No relevant listeners"
+            echo "=== Grep ALL compose files for 'idcentra' or '_be' ==="
+            grep -rn "idcentra\|_be" /home/*/rhwdp/ /home/*/idcentra/ 2>/dev/null | head -20 || echo "Nothing found"
 
             echo ""
-            echo "=== What was the old system nginx serving for idcentra? ==="
-            grep -r "idcentra" /etc/nginx/ 2>/dev/null | head -10 || echo "No idcentra in system nginx"
+            echo "=== List /home directories ==="
+            ls -la /home/*/ 2>/dev/null | head -20
 
             echo ""
-            echo "=== rh-backend container details ==="
-            docker inspect rh-backend --format '{{.Config.Image}} {{.NetworkSettings.Ports}}' 2>/dev/null || echo "rh-backend not found"
+            echo "=== Check rh-backend docker-compose ==="
+            cat /home/*/rhwdp/rh-backend/docker-compose.yml 2>/dev/null || echo "Not found"
 
             echo ""
-            echo "=== Test api.rhwdp.gov.ng via our nginx ==="
-            curl -sf --max-time 5 -H "Host: api.rhwdp.gov.ng" http://127.0.0.1/ 2>&1 | head -5 || echo "FAILED (expected - redirects to HTTPS)"
-            curl -skf --max-time 5 https://api.rhwdp.gov.ng 2>&1 | head -5 || echo "HTTPS FAILED"
+            echo "=== Processes listening on ALL ports ==="
+            ss -tlnp 2>/dev/null | head -20
 
             echo ""
-            echo "=== Test idcentra.com via our nginx ==="
-            curl -sf --max-time 5 -H "Host: idcentra.com" http://127.0.0.1/ 2>&1 | head -5 || echo "FAILED (expected - redirects to HTTPS)"
-
+            echo "=== Test both backends ==="
+            echo "Port 5000 (rh-backend):"
+            curl -sf --max-time 3 http://127.0.0.1:5000/ 2>&1 | head -3 || echo "FAILED"
             echo ""
-            echo "=== Test port 5000 directly ==="
-            curl -sf --max-time 5 http://127.0.0.1:5000/ 2>&1 | head -5 || echo "Port 5000 returned error/empty"
-
-            echo ""
-            echo "=== Self-signed cert for idcentra.com ==="
-            ls -la ~/facededup/nginx/ssl/ 2>/dev/null || echo "No nginx/ssl/ directory"
-            docker exec facededup-nginx ls -la /etc/nginx/ssl/ 2>/dev/null || echo "No /etc/nginx/ssl/ in container"
-
-            echo ""
-            echo "=== Test HTTPS idcentra.com directly on localhost (bypass Cloudflare) ==="
-            curl -sk --max-time 5 -H "Host: idcentra.com" https://127.0.0.1/ 2>&1 | head -5 || echo "HTTPS idcentra.com on localhost FAILED"
-            curl -vsk --max-time 5 -H "Host: idcentra.com" https://127.0.0.1/ 2>&1 | grep -E "subject:|issuer:|SSL|error" | head -5 || echo "No SSL info"
-
-            echo ""
-            echo "=== Test HTTPS api.rhwdp.gov.ng directly on localhost ==="
-            curl -sk --max-time 5 -H "Host: api.rhwdp.gov.ng" https://127.0.0.1/ 2>&1 | head -5 || echo "HTTPS api.rhwdp on localhost FAILED"
+            echo "Common idcentra ports (3000, 4000, 8080, 8000, 9000):"
+            for port in 3000 4000 8080 9000; do
+              result=$(curl -sf --max-time 2 http://127.0.0.1:$port/ 2>&1 | head -1) && echo "Port $port: $result" || true
+            done
 
             echo ""
             echo "=== Nginx config test ==="
