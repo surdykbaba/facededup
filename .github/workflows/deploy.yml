@@ -95,5 +95,8 @@ jobs:
             echo "=== Running database migrations ==="
             docker compose -f docker-compose.prod.yaml exec -T api alembic upgrade head
 
+            echo "=== Reload nginx config (volume mounts don't trigger container restart) ==="
+            docker exec facededup-nginx nginx -s reload 2>&1 || true
+
             echo "=== Deployment complete ==="
             curl -sf http://localhost/api/v1/health 2>&1 || echo "Health check endpoint returned non-JSON (may still be starting)"

@@ -10,7 +10,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Verify idcentra on Server 2
+      - name: Fix idcentra-api on Server 2
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.WORKER_HOST }}
@@ -22,20 +22,29 @@ jobs:
           command_timeout: 3m
           script: |
             set -e
-            echo "=== Server 2: idcentra containers ==="
-            docker ps --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            IDCENTRA_DIR="/var/www/html/idcentra_be"
+
+            echo "=== idcentra containers status ==="
+            docker ps -a --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+            echo ""
+            echo "=== idcentra-api logs (last 30 lines) ==="
+            cd "$IDCENTRA_DIR"
+            docker compose logs --tail=30 idcentra-api 2>/dev/null || docker logs idcentra-api --tail=30 2>&1 || echo "No logs"
+
+            echo ""
+            echo "=== Restart idcentra-api ==="
+            cd "$IDCENTRA_DIR"
+            docker compose up -d 2>/dev/null || true
+            sleep 5
+            docker ps -a --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
             echo ""
             echo "=== Test idcentra-api on port 15909 ==="
-            curl -sf --max-time 5 http://127.0.0.1:15909/ 2>&1 | head -5 || echo "Port 15909 FAILED or returned error"
+            curl -sf --max-time 5 http://127.0.0.1:15909/ 2>&1 | head -5 || echo "Port 15909 not responding"
+            curl -v --max-time 5 http://127.0.0.1:15909/ 2>&1 | head -10 || true
 
-            echo ""
-            echo "=== Test idcentra-api health/readiness ==="
-            curl -sf --max-time 5 http://127.0.0.1:15909/health 2>&1 | head -5 || echo "No /health endpoint"
-            curl -sf --max-time 5 http://127.0.0.1:15909/api 2>&1 | head -5 || echo "No /api endpoint"
-            curl -sf --max-time 5 http://127.0.0.1:15909/api/v1 2>&1 | head -5 || echo "No /api/v1 endpoint"
-
-      - name: Verify nginx proxy on Server 1
+      - name: Reload nginx + verify on Server 1
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DO_HOST }}
@@ -44,28 +53,24 @@ jobs:
           command_timeout: 3m
           script: |
             set -e
-            echo "=== Server 1: containers ==="
-            docker ps --format "table {{.Names}}\t{{.Status}}" | head -10
+            echo "=== Reload nginx config ==="
+            docker exec facededup-nginx nginx -s reload 2>&1
 
             echo ""
-            echo "=== Test connectivity to idcentra-api on Server 2 ==="
-            curl -sf --max-time 5 http://10.8.1.14:15909/ 2>&1 | head -5 || echo "FAILED: Can't reach 10.8.1.14:15909"
+            echo "=== Verify nginx config for idcentra ==="
+            docker exec facededup-nginx cat /etc/nginx/conf.d/rhwdp.conf 2>&1
 
             echo ""
-            echo "=== Test idcentra.com via nginx (port 80) ==="
-            curl -sf --max-time 5 -H "Host: idcentra.com" http://127.0.0.1/ 2>&1 | head -5 || echo "FAILED"
+            echo "=== Test connectivity to 10.8.1.14:15909 ==="
+            curl -v --max-time 5 http://10.8.1.14:15909/ 2>&1 | head -10 || echo "Can't reach 10.8.1.14:15909"
 
             echo ""
-            echo "=== Test idcentra.com via nginx (port 443) ==="
-            curl -sk --max-time 5 -H "Host: idcentra.com" https://127.0.0.1/ 2>&1 | head -5 || echo "FAILED"
+            echo "=== Test idcentra.com via nginx ==="
+            curl -v --max-time 5 -H "Host: idcentra.com" http://127.0.0.1/ 2>&1 | head -15 || echo "FAILED"
 
             echo ""
             echo "=== Test api.rhwdp.gov.ng via nginx ==="
-            curl -sk --max-time 5 -H "Host: api.rhwdp.gov.ng" https://127.0.0.1/ 2>&1 | head -5 || echo "FAILED"
-
-            echo ""
-            echo "=== Test facededup API ==="
-            curl -sf --max-time 5 http://127.0.0.1/api/v1/health 2>&1 | head -3 || echo "FAILED"
+            curl -sk --max-time 5 -H "Host: api.rhwdp.gov.ng" https://127.0.0.1/ 2>&1 | head -3 || echo "FAILED"
 
             echo ""
             echo "=== Nginx config test ==="
