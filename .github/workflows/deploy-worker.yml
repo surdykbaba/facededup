@@ -72,16 +72,42 @@ jobs:
               # Fix permissions: idcentra-api needs /app/tmp writable
               run_sudo mkdir -p tmp
               run_sudo chmod 777 tmp
+
+              # The idcentra-api Go app connects to localhost:5432 (native PostgreSQL on host).
+              # Docker bridge network isolates localhost, so we must use network_mode: host.
+              # Patch docker-compose.yml: add network_mode: host and remove ports for idcentra-api
+              if ! grep -q 'network_mode' docker-compose.yml; then
+                echo "Patching docker-compose.yml for host networking..."
+                # Add network_mode: host after container_name: idcentra-api
+                run_sudo sed -i '/container_name: idcentra-api/a\    network_mode: "host"' docker-compose.yml
+                # Comment out the ports section for idcentra-api (15909 mapping)
+                run_sudo sed -i 's/^\(\s*\)- "15909:15909"/\1# - "15909:15909"  # not needed with network_mode: host/' docker-compose.yml
+                echo "docker-compose.yml patched"
+              else
+                echo "docker-compose.yml already has network_mode"
+              fi
+
               if docker ps --filter "name=idcentra-api" --filter "status=running" --format "{{.Names}}" | grep -q "idcentra-api"; then
-                echo "idcentra-api already running"
+                # Check if idcentra-api is actually healthy (not crash-looping)
+                if curl -sf --max-time 3 http://127.0.0.1:15909/ > /dev/null 2>&1; then
+                  echo "idcentra-api already running and healthy"
+                else
+                  echo "idcentra-api running but not responding, restarting..."
+                  docker compose down 2>/dev/null || true
+                  docker compose up -d 2>/dev/null || run_sudo docker compose up -d
+                  sleep 10
+                fi
               else
                 echo "Starting idcentra containers..."
                 docker compose down 2>/dev/null || true
                 docker compose up -d 2>/dev/null || run_sudo docker compose up -d
-                sleep 5
+                sleep 10
                 echo "idcentra containers started"
               fi
               docker ps -a --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+              # Verify idcentra-api is responding
+              echo "=== Testing idcentra-api on port 15909 ==="
+              curl -sf --max-time 10 http://127.0.0.1:15909/ 2>&1 | head -5 || echo "WARNING: idcentra-api not responding on port 15909"
               cd "$DEPLOY_DIR"
             else
               echo "WARNING: idcentra_be directory not found at $IDCENTRA_DIR"

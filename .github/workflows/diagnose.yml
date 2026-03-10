@@ -30,57 +30,55 @@ jobs:
             }
 
             IDCENTRA_DIR="/var/www/html/idcentra_be"
-
-            echo "=== idcentra containers status ==="
-            docker ps -a --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-
-            echo ""
-            echo "=== Check port 15909 binding ==="
-            run_sudo ss -tlnp | grep 15909 || echo "Port 15909 NOT listening"
-            run_sudo ss -tlnp | grep -E '15909|docker' || echo "No docker ports on 15909"
-
-            echo ""
-            echo "=== Check all listening ports ==="
-            run_sudo ss -tlnp | head -30
-
-            echo ""
-            echo "=== idcentra-api logs (last 50 lines) ==="
             cd "$IDCENTRA_DIR"
-            docker compose logs --tail=50 idcentra-api 2>/dev/null || docker logs idcentra-api --tail=50 2>&1 || echo "No logs"
+
+            echo "=== Current docker-compose.yml ==="
+            cat docker-compose.yml
 
             echo ""
-            echo "=== Docker inspect idcentra-api port bindings ==="
-            docker inspect idcentra-api --format='{{json .NetworkSettings.Ports}}' 2>/dev/null || echo "Container not found"
-            docker inspect idcentra-api --format='{{.State.Status}} - {{.State.Error}}' 2>/dev/null || true
-
-            echo ""
-            echo "=== Fix tmp permissions and restart idcentra-api ==="
-            cd "$IDCENTRA_DIR"
+            echo "=== Fix: Add network_mode host for idcentra-api ==="
+            # Fix permissions
             run_sudo mkdir -p tmp
             run_sudo chmod 777 tmp
+
+            # Patch docker-compose.yml to use host networking
+            # idcentra-api tries to connect to localhost:5432 (native PostgreSQL)
+            # but Docker bridge network isolates localhost
+            if ! grep -q 'network_mode' docker-compose.yml; then
+              echo "Patching docker-compose.yml..."
+              run_sudo sed -i '/container_name: idcentra-api/a\    network_mode: "host"' docker-compose.yml
+              run_sudo sed -i 's/^\(\s*\)- "15909:15909"/\1# - "15909:15909"/' docker-compose.yml
+              echo "Patched!"
+            else
+              echo "Already has network_mode"
+            fi
+
+            echo ""
+            echo "=== Patched docker-compose.yml ==="
+            cat docker-compose.yml
+
+            echo ""
+            echo "=== Restarting idcentra containers ==="
             docker compose down 2>/dev/null || true
             docker compose up -d 2>/dev/null || run_sudo docker compose up -d
-            echo "Waiting 15s for idcentra-api to start..."
-            sleep 15
+            echo "Waiting 20s for Go app to build and start..."
+            sleep 20
+
+            echo ""
+            echo "=== Container status ==="
             docker ps -a --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
             echo ""
-            echo "=== idcentra-api logs after restart ==="
-            docker compose logs --tail=30 idcentra-api 2>/dev/null || docker logs idcentra-api --tail=30 2>&1 || echo "No logs"
+            echo "=== idcentra-api logs ==="
+            docker compose logs --tail=40 idcentra-api 2>/dev/null || docker logs idcentra-api --tail=40 2>&1 || echo "No logs"
 
             echo ""
-            echo "=== Check port 15909 after restart ==="
-            run_sudo ss -tlnp | grep 15909 || echo "Port 15909 still NOT listening"
+            echo "=== Check port 15909 ==="
+            run_sudo ss -tlnp | grep 15909 || echo "Port 15909 NOT listening"
 
             echo ""
-            echo "=== Test idcentra-api locally ==="
-            curl -v --max-time 10 http://127.0.0.1:15909/ 2>&1 | head -15 || echo "Port 15909 not responding locally"
-            curl -v --max-time 10 http://0.0.0.0:15909/ 2>&1 | head -15 || echo "Port 15909 not responding on 0.0.0.0"
-
-            echo ""
-            echo "=== Firewall status ==="
-            run_sudo ufw status verbose 2>/dev/null || echo "UFW not available"
-            run_sudo iptables -L INPUT -n --line-numbers 2>/dev/null | head -20 || true
+            echo "=== Test locally ==="
+            curl -v --max-time 10 http://127.0.0.1:15909/ 2>&1 | head -15 || echo "Port 15909 not responding"
 
       - name: Test from Server 1
         uses: appleboy/ssh-action@v1
@@ -95,13 +93,13 @@ jobs:
             curl -v --max-time 10 http://10.8.1.14:15909/ 2>&1 | head -15 || echo "Can't reach 10.8.1.14:15909"
 
             echo ""
+            echo "=== Reload nginx ==="
+            docker exec facededup-nginx nginx -s reload 2>&1
+
+            echo ""
             echo "=== Test idcentra.com via nginx ==="
             curl -v --max-time 10 -H "Host: idcentra.com" http://127.0.0.1/ 2>&1 | head -15 || echo "FAILED"
 
             echo ""
             echo "=== Test api.rhwdp.gov.ng via nginx ==="
             curl -sk --max-time 5 -H "Host: api.rhwdp.gov.ng" https://127.0.0.1/ 2>&1 | head -3 || echo "FAILED"
-
-            echo ""
-            echo "=== Nginx config test ==="
-            docker exec facededup-nginx nginx -t 2>&1
