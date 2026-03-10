@@ -10,7 +10,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Check idcentra on Server 2
+      - name: Investigate idcentra frontend on Server 2
         uses: appleboy/ssh-action@v1
         env:
           SUDO_PASS: ${{ secrets.WORKER_PASSWORD || secrets.DO_PASSWORD }}
@@ -29,67 +29,124 @@ jobs:
               echo "$SUDO_PASS" | sudo -S "$@"
             }
 
-            # Stop conflicting Docker container (it conflicts with native process on port 8999)
-            echo "=== Stopping idcentra Docker container ==="
-            IDCENTRA_DIR="/var/www/html/idcentra_be"
-            if [ -d "$IDCENTRA_DIR" ]; then
-              cd "$IDCENTRA_DIR"
-              docker compose down 2>/dev/null || true
-            fi
+            echo "=== Old system nginx configs ==="
+            echo "--- /etc/nginx/sites-available/ ---"
+            ls -la /etc/nginx/sites-available/ 2>/dev/null || echo "No sites-available"
+            echo "--- /etc/nginx/sites-enabled/ ---"
+            ls -la /etc/nginx/sites-enabled/ 2>/dev/null || echo "No sites-enabled"
+            echo "--- /etc/nginx/conf.d/ ---"
+            ls -la /etc/nginx/conf.d/ 2>/dev/null || echo "No conf.d"
 
             echo ""
-            echo "=== Firewall: open ports 80, 443 (public) and 8999 (from Server 1) ==="
-            run_sudo iptables -C INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null || \
-              run_sudo iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT 2>/dev/null || true
-            run_sudo iptables -C INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || \
-              run_sudo iptables -I INPUT 1 -p tcp --dport 443 -j ACCEPT 2>/dev/null || true
-            run_sudo iptables -C INPUT -p tcp --dport 8999 -s 10.8.1.10 -j ACCEPT 2>/dev/null || \
-              run_sudo iptables -I INPUT 1 -p tcp --dport 8999 -s 10.8.1.10 -j ACCEPT 2>/dev/null || true
+            echo "=== Looking for idcentra nginx configs ==="
+            run_sudo grep -rl "idcentra" /etc/nginx/ 2>/dev/null || echo "No idcentra configs found in /etc/nginx/"
 
             echo ""
-            echo "=== Native processes on idcentra ports ==="
-            run_sudo ss -tlnp | grep -E '8999|9000|9010' || echo "No processes found"
+            echo "=== Cat any idcentra nginx config ==="
+            for f in $(run_sudo grep -rl "idcentra" /etc/nginx/ 2>/dev/null); do
+              echo "--- $f ---"
+              run_sudo cat "$f" 2>/dev/null | head -80
+              echo ""
+            done
 
             echo ""
-            echo "=== Test idcentra native backend on port 8999 locally ==="
-            curl -v --max-time 5 http://127.0.0.1:8999/ 2>&1 | head -15 || echo "Port 8999 not responding"
+            echo "=== Idcentra directories in /var/www/ ==="
+            ls -la /var/www/ 2>/dev/null || echo "No /var/www/"
+            ls -la /var/www/html/ 2>/dev/null || echo "No /var/www/html/"
 
             echo ""
-            echo "=== Docker containers ==="
-            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "No containers"
+            echo "=== Looking for idcentra frontend files ==="
+            for dir in /var/www/html/idcentra /var/www/html/idcentra_fe /var/www/idcentra /var/www/html/idcentra.com; do
+              if [ -d "$dir" ]; then
+                echo "FOUND: $dir"
+                ls -la "$dir" | head -20
+                # Check for index.html or build output
+                if [ -f "$dir/index.html" ]; then
+                  echo "Has index.html"
+                  head -5 "$dir/index.html"
+                fi
+                if [ -d "$dir/build" ]; then
+                  echo "Has build/ directory"
+                  ls -la "$dir/build" | head -10
+                fi
+                if [ -d "$dir/dist" ]; then
+                  echo "Has dist/ directory"
+                  ls -la "$dir/dist" | head -10
+                fi
+              fi
+            done
 
             echo ""
-            echo "=== Test idcentra.com via facededup-nginx HTTP (port 80) ==="
-            curl -v --max-time 5 -H "Host: idcentra.com" http://127.0.0.1/ 2>&1 | head -15 || echo "HTTP proxy FAILED"
+            echo "=== All directories in /var/www/html/ ==="
+            ls -d /var/www/html/*/ 2>/dev/null || echo "No subdirectories"
 
             echo ""
-            echo "=== Test idcentra.com via facededup-nginx HTTPS (port 443) ==="
-            curl -skv --max-time 5 -H "Host: idcentra.com" https://127.0.0.1/ 2>&1 | head -15 || echo "HTTPS proxy FAILED"
+            echo "=== Check idcentra_be for frontend references ==="
+            ls -la /var/www/html/idcentra_be/ 2>/dev/null | head -20
+            # Check if Go app serves static files
+            run_sudo grep -r "static\|template\|html\|public\|dist\|build\|frontend\|index" /var/www/html/idcentra_be/*.go 2>/dev/null | head -10 || echo "No .go files in root"
+            run_sudo grep -r "static\|template\|html\|public\|dist\|build\|frontend" /var/www/html/idcentra_be/.env 2>/dev/null | head -5 || echo "No frontend refs in .env"
 
-      - name: Test from Server 1
+            echo ""
+            echo "=== Native Go processes ==="
+            run_sudo ss -tlnp | grep -E '8999|9000|9010|3000|4000|5000' || echo "No processes found"
+
+            echo ""
+            echo "=== Check for any other web services (PM2, node, etc) ==="
+            pm2 list 2>/dev/null || echo "No PM2"
+            run_sudo systemctl list-units --type=service --state=running 2>/dev/null | grep -iE "idcentra|node|next|react|nuxt|web" || echo "No matching services"
+
+            echo ""
+            echo "=== Test idcentra backend routes ==="
+            echo "--- GET / ---"
+            curl -s --max-time 3 http://127.0.0.1:8999/ 2>/dev/null | head -3
+            echo ""
+            echo "--- GET /api ---"
+            curl -s --max-time 3 http://127.0.0.1:8999/api 2>/dev/null | head -3
+            echo ""
+            echo "--- GET /api/v1 ---"
+            curl -s --max-time 3 http://127.0.0.1:8999/api/v1 2>/dev/null | head -3
+            echo ""
+            echo "--- GET /health ---"
+            curl -s --max-time 3 http://127.0.0.1:8999/health 2>/dev/null | head -3
+            echo ""
+            echo "--- GET /index.html ---"
+            curl -s --max-time 3 http://127.0.0.1:8999/index.html 2>/dev/null | head -3
+
+      - name: Check other ports on Server 2
         uses: appleboy/ssh-action@v1
+        env:
+          SUDO_PASS: ${{ secrets.WORKER_PASSWORD || secrets.DO_PASSWORD }}
         with:
-          host: ${{ secrets.DO_HOST }}
-          username: ${{ secrets.DO_USER }}
-          password: ${{ secrets.DO_PASSWORD }}
+          host: ${{ secrets.WORKER_HOST }}
+          username: ${{ secrets.WORKER_USER }}
+          password: ${{ secrets.WORKER_PASSWORD }}
+          proxy_host: ${{ secrets.DO_HOST }}
+          proxy_username: ${{ secrets.DO_USER }}
+          proxy_password: ${{ secrets.DO_PASSWORD }}
+          envs: SUDO_PASS
           command_timeout: 3m
           script: |
             set -e
-            echo "=== Test direct to Server 2 port 8999 ==="
-            curl -v --max-time 10 http://10.8.1.14:8999/ 2>&1 | head -15 || echo "Can't reach 10.8.1.14:8999"
+            run_sudo() {
+              echo "$SUDO_PASS" | sudo -S "$@"
+            }
+
+            echo "=== All listening TCP ports ==="
+            run_sudo ss -tlnp 2>/dev/null | head -40
 
             echo ""
-            echo "=== Test idcentra.com via Server 2 nginx HTTP ==="
-            curl -v --max-time 10 -H "Host: idcentra.com" http://10.8.1.14/ 2>&1 | head -15 || echo "HTTP FAILED"
+            echo "=== Check for frontend app processes ==="
+            run_sudo ps aux | grep -iE "node|next|nuxt|react|vue|angular|serve|nginx" | grep -v grep || echo "No frontend processes"
 
             echo ""
-            echo "=== Test idcentra.com via Server 2 nginx HTTPS ==="
-            curl -skv --max-time 10 -H "Host: idcentra.com" https://10.8.1.14/ 2>&1 | head -15 || echo "HTTPS FAILED"
+            echo "=== Check port 9000 (swiftend_idcent) ==="
+            curl -s --max-time 3 http://127.0.0.1:9000/ 2>/dev/null | head -5 || echo "No response on 9000"
 
             echo ""
-            echo "=== Reload Server 1 nginx ==="
-            docker exec facededup-nginx nginx -s reload 2>&1
+            echo "=== Check port 9010 (idcentra_go_sta) ==="
+            curl -s --max-time 3 http://127.0.0.1:9010/ 2>/dev/null | head -5 || echo "No response on 9010"
 
             echo ""
-            echo "=== Test api.rhwdp.gov.ng via Server 1 nginx ==="
-            curl -sk --max-time 5 -H "Host: api.rhwdp.gov.ng" https://127.0.0.1/ 2>&1 | head -3 || echo "FAILED"
+            echo "=== Check port 3000 (common frontend port) ==="
+            curl -s --max-time 3 http://127.0.0.1:3000/ 2>/dev/null | head -5 || echo "No response on 3000"
