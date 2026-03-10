@@ -37,32 +37,36 @@ jobs:
               echo "$SUDO_PASS" | sudo -S "$@"
             }
 
-            # Stop any existing web server using port 80
-            if run_sudo lsof -i :80 &> /dev/null 2>&1 || true; then
-              echo "=== Freeing port 80 ==="
-              run_sudo systemctl stop apache2 2>/dev/null || true
-              run_sudo systemctl disable apache2 2>/dev/null || true
-              run_sudo systemctl stop nginx 2>/dev/null || true
-              run_sudo systemctl disable nginx 2>/dev/null || true
-              run_sudo fuser -k 80/tcp 2>/dev/null || true
-              echo "Port 80 freed"
-            fi
+            # Stop any existing web server using port 80/443
+            echo "=== Freeing ports 80 and 443 ==="
+            run_sudo systemctl stop apache2 2>/dev/null || true
+            run_sudo systemctl disable apache2 2>/dev/null || true
+            run_sudo systemctl stop nginx 2>/dev/null || true
+            run_sudo systemctl disable nginx 2>/dev/null || true
+            run_sudo fuser -k 80/tcp 2>/dev/null || true
+            run_sudo fuser -k 443/tcp 2>/dev/null || true
+            echo "Ports 80/443 freed"
 
-            # Open firewall for load balancer traffic from Server 1
-            echo "=== Opening firewall for Server 1 (load balancer) ==="
+            # Open firewall for load balancer traffic from Server 1 + Cloudflare
+            echo "=== Opening firewall ==="
             if command -v ufw &> /dev/null && run_sudo ufw status | grep -q "active"; then
               run_sudo ufw allow from 10.8.1.10 to any port 80 proto tcp comment "Server 1 LB" 2>/dev/null || true
               run_sudo ufw allow from 10.8.1.10 to any port 8000 proto tcp comment "Server 1 LB direct" 2>/dev/null || true
               run_sudo ufw allow from 10.8.1.10 to any port 8999 proto tcp comment "Server 1 LB idcentra" 2>/dev/null || true
+              # Allow Cloudflare and public traffic on 80/443 for idcentra.com
+              run_sudo ufw allow 80/tcp comment "HTTP (Cloudflare + LB)" 2>/dev/null || true
+              run_sudo ufw allow 443/tcp comment "HTTPS (Cloudflare idcentra)" 2>/dev/null || true
               run_sudo ufw reload 2>/dev/null || true
               echo "UFW rules added"
             fi
             # Also set iptables directly in case ufw is not managing rules
-            run_sudo iptables -C INPUT -p tcp --dport 80 -s 10.8.1.10 -j ACCEPT 2>/dev/null || \
-              run_sudo iptables -I INPUT 1 -p tcp --dport 80 -s 10.8.1.10 -j ACCEPT 2>/dev/null || true
+            run_sudo iptables -C INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null || \
+              run_sudo iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT 2>/dev/null || true
+            run_sudo iptables -C INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || \
+              run_sudo iptables -I INPUT 1 -p tcp --dport 443 -j ACCEPT 2>/dev/null || true
             run_sudo iptables -C INPUT -p tcp --dport 8999 -s 10.8.1.10 -j ACCEPT 2>/dev/null || \
               run_sudo iptables -I INPUT 1 -p tcp --dport 8999 -s 10.8.1.10 -j ACCEPT 2>/dev/null || true
-            echo "Firewall configured for ports 80,8999 from 10.8.1.10"
+            echo "Firewall configured for ports 80,443 (public) and 8999 (from 10.8.1.10)"
 
             # Stop idcentra Docker container if running (conflicts with native process on port 8999)
             # The idcentra production backend runs as a native Go binary (idc-prod-curren) on port 8999.
@@ -186,6 +190,21 @@ jobs:
               echo "WARNING: Redis port 6379 is NOT reachable on $REDIS_HOST"
             fi
 
+            # Generate self-signed SSL cert for idcentra.com (Cloudflare Full mode)
+            echo "=== Setting up SSL cert for idcentra.com ==="
+            SSL_DIR="$DEPLOY_DIR/nginx/ssl"
+            mkdir -p "$SSL_DIR"
+            if [ ! -f "$SSL_DIR/idcentra.com.crt" ] || [ ! -f "$SSL_DIR/idcentra.com.key" ]; then
+              echo "Generating self-signed SSL certificate for idcentra.com..."
+              openssl req -x509 -newkey rsa:2048 -nodes \
+                -keyout "$SSL_DIR/idcentra.com.key" \
+                -out "$SSL_DIR/idcentra.com.crt" \
+                -days 365 -subj "/CN=idcentra.com"
+              echo "SSL cert generated"
+            else
+              echo "SSL cert already exists"
+            fi
+
             echo "=== Stopping existing containers ==="
             $DC -f docker-compose.worker.yaml down 2>/dev/null || true
 
@@ -227,5 +246,19 @@ jobs:
               fi
               sleep 2
             done
+
+            echo "=== Verifying idcentra.com proxy ==="
+            # Test HTTP (Cloudflare Flexible mode)
+            HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 5 -H "Host: idcentra.com" http://127.0.0.1/ 2>/dev/null) || HTTP_STATUS="FAIL"
+            echo "idcentra.com via HTTP: $HTTP_STATUS"
+            # Test HTTPS (Cloudflare Full mode)
+            HTTPS_STATUS=$(curl -skf -o /dev/null -w "%{http_code}" --max-time 5 -H "Host: idcentra.com" https://127.0.0.1/ 2>/dev/null) || HTTPS_STATUS="FAIL"
+            echo "idcentra.com via HTTPS: $HTTPS_STATUS"
+
+            if [ "$HTTP_STATUS" = "FAIL" ] && [ "$HTTPS_STATUS" = "FAIL" ]; then
+              echo "WARNING: idcentra.com proxy not responding on either port"
+              echo "=== Nginx error log ==="
+              $DC -f docker-compose.worker.yaml logs --tail=20 nginx 2>/dev/null || true
+            fi
 
             echo "=== Worker deployment complete ==="

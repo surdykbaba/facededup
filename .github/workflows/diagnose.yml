@@ -38,17 +38,33 @@ jobs:
             fi
 
             echo ""
-            echo "=== Open firewall for port 8999 from Server 1 ==="
+            echo "=== Firewall: open ports 80, 443 (public) and 8999 (from Server 1) ==="
+            run_sudo iptables -C INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null || \
+              run_sudo iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT 2>/dev/null || true
+            run_sudo iptables -C INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || \
+              run_sudo iptables -I INPUT 1 -p tcp --dport 443 -j ACCEPT 2>/dev/null || true
             run_sudo iptables -C INPUT -p tcp --dport 8999 -s 10.8.1.10 -j ACCEPT 2>/dev/null || \
               run_sudo iptables -I INPUT 1 -p tcp --dport 8999 -s 10.8.1.10 -j ACCEPT 2>/dev/null || true
 
             echo ""
             echo "=== Native processes on idcentra ports ==="
-            run_sudo ss -tlnp | grep -E '8999|9000|9010|15909' || echo "No processes found"
+            run_sudo ss -tlnp | grep -E '8999|9000|9010' || echo "No processes found"
 
             echo ""
             echo "=== Test idcentra native backend on port 8999 locally ==="
             curl -v --max-time 5 http://127.0.0.1:8999/ 2>&1 | head -15 || echo "Port 8999 not responding"
+
+            echo ""
+            echo "=== Docker containers ==="
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "No containers"
+
+            echo ""
+            echo "=== Test idcentra.com via facededup-nginx HTTP (port 80) ==="
+            curl -v --max-time 5 -H "Host: idcentra.com" http://127.0.0.1/ 2>&1 | head -15 || echo "HTTP proxy FAILED"
+
+            echo ""
+            echo "=== Test idcentra.com via facededup-nginx HTTPS (port 443) ==="
+            curl -skv --max-time 5 -H "Host: idcentra.com" https://127.0.0.1/ 2>&1 | head -15 || echo "HTTPS proxy FAILED"
 
       - name: Test from Server 1
         uses: appleboy/ssh-action@v1
@@ -59,17 +75,21 @@ jobs:
           command_timeout: 3m
           script: |
             set -e
-            echo "=== Test connectivity to 10.8.1.14:8999 ==="
+            echo "=== Test direct to Server 2 port 8999 ==="
             curl -v --max-time 10 http://10.8.1.14:8999/ 2>&1 | head -15 || echo "Can't reach 10.8.1.14:8999"
 
             echo ""
-            echo "=== Reload nginx ==="
+            echo "=== Test idcentra.com via Server 2 nginx HTTP ==="
+            curl -v --max-time 10 -H "Host: idcentra.com" http://10.8.1.14/ 2>&1 | head -15 || echo "HTTP FAILED"
+
+            echo ""
+            echo "=== Test idcentra.com via Server 2 nginx HTTPS ==="
+            curl -skv --max-time 10 -H "Host: idcentra.com" https://10.8.1.14/ 2>&1 | head -15 || echo "HTTPS FAILED"
+
+            echo ""
+            echo "=== Reload Server 1 nginx ==="
             docker exec facededup-nginx nginx -s reload 2>&1
 
             echo ""
-            echo "=== Test idcentra.com via nginx ==="
-            curl -v --max-time 10 -H "Host: idcentra.com" http://127.0.0.1/ 2>&1 | head -15 || echo "FAILED"
-
-            echo ""
-            echo "=== Test api.rhwdp.gov.ng via nginx ==="
+            echo "=== Test api.rhwdp.gov.ng via Server 1 nginx ==="
             curl -sk --max-time 5 -H "Host: api.rhwdp.gov.ng" https://127.0.0.1/ 2>&1 | head -3 || echo "FAILED"
