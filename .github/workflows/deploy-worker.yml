@@ -70,8 +70,8 @@ jobs:
             if [ -d "$IDCENTRA_DIR" ] && [ -f "$IDCENTRA_DIR/docker-compose.yml" ]; then
               cd "$IDCENTRA_DIR"
               # Fix permissions: idcentra-api needs /app/tmp writable
-              mkdir -p tmp
-              chmod 777 tmp
+              run_sudo mkdir -p tmp
+              run_sudo chmod 777 tmp
               if docker ps --filter "name=idcentra-api" --filter "status=running" --format "{{.Names}}" | grep -q "idcentra-api"; then
                 echo "idcentra-api already running"
               else
