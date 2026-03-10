@@ -53,88 +53,33 @@ jobs:
             if command -v ufw &> /dev/null && run_sudo ufw status | grep -q "active"; then
               run_sudo ufw allow from 10.8.1.10 to any port 80 proto tcp comment "Server 1 LB" 2>/dev/null || true
               run_sudo ufw allow from 10.8.1.10 to any port 8000 proto tcp comment "Server 1 LB direct" 2>/dev/null || true
-              run_sudo ufw allow from 10.8.1.10 to any port 15909 proto tcp comment "Server 1 LB idcentra" 2>/dev/null || true
+              run_sudo ufw allow from 10.8.1.10 to any port 8999 proto tcp comment "Server 1 LB idcentra" 2>/dev/null || true
               run_sudo ufw reload 2>/dev/null || true
               echo "UFW rules added"
             fi
             # Also set iptables directly in case ufw is not managing rules
             run_sudo iptables -C INPUT -p tcp --dport 80 -s 10.8.1.10 -j ACCEPT 2>/dev/null || \
               run_sudo iptables -I INPUT 1 -p tcp --dport 80 -s 10.8.1.10 -j ACCEPT 2>/dev/null || true
-            run_sudo iptables -C INPUT -p tcp --dport 15909 -s 10.8.1.10 -j ACCEPT 2>/dev/null || \
-              run_sudo iptables -I INPUT 1 -p tcp --dport 15909 -s 10.8.1.10 -j ACCEPT 2>/dev/null || true
-            echo "Firewall configured for ports 80,15909 from 10.8.1.10"
+            run_sudo iptables -C INPUT -p tcp --dport 8999 -s 10.8.1.10 -j ACCEPT 2>/dev/null || \
+              run_sudo iptables -I INPUT 1 -p tcp --dport 8999 -s 10.8.1.10 -j ACCEPT 2>/dev/null || true
+            echo "Firewall configured for ports 80,8999 from 10.8.1.10"
 
-            # Start idcentra_be if not running (lives on this server)
-            echo "=== Starting idcentra_be containers ==="
-            IDCENTRA_DIR="/var/www/html/idcentra_be"
-            if [ -d "$IDCENTRA_DIR" ] && [ -f "$IDCENTRA_DIR/docker-compose.yml" ]; then
-              cd "$IDCENTRA_DIR"
-              # Fix permissions: idcentra-api needs /app/tmp writable
-              run_sudo mkdir -p tmp
-              run_sudo chmod 777 tmp
-
-              # The idcentra-api Go app connects to localhost:5432 (native PostgreSQL on host).
-              # Docker bridge network isolates localhost, so we must use network_mode: host.
-              # Patch docker-compose.yml: add network_mode: host and remove ports for idcentra-api
-              if ! grep -q 'network_mode' docker-compose.yml; then
-                echo "Patching docker-compose.yml for host networking..."
-                run_sudo sed -i '/container_name: idcentra-api/a\    network_mode: "host"' docker-compose.yml
-              fi
-              # Remove all lines containing 15909 (only idcentra-api uses this port)
-              run_sudo sed -i '/15909/d' docker-compose.yml
-              # Remove any orphaned "ports:" key with no list items after it
-              # (ports: followed by a line that doesn't start with "  -" or a comment about ports)
-              run_sudo python3 -c "
-import re
-with open('docker-compose.yml') as f:
-    lines = f.readlines()
-result = []
-skip_next_empty_ports = False
-for i, line in enumerate(lines):
-    stripped = line.strip()
-    if stripped == 'ports:':
-        # Check if next non-empty line is a list item
-        has_items = False
-        for j in range(i+1, len(lines)):
-            next_stripped = lines[j].strip()
-            if not next_stripped:
-                continue
-            if next_stripped.startswith('-'):
-                has_items = True
-            break
-        if not has_items:
-            continue  # skip empty ports: key
-    result.append(line)
-with open('docker-compose.yml', 'w') as f:
-    f.writelines(result)
-"
-              echo "docker-compose.yml configured for host networking"
-              cat docker-compose.yml
-
-              if docker ps --filter "name=idcentra-api" --filter "status=running" --format "{{.Names}}" | grep -q "idcentra-api"; then
-                # Check if idcentra-api is actually healthy (not crash-looping)
-                if curl -sf --max-time 3 http://127.0.0.1:15909/ > /dev/null 2>&1; then
-                  echo "idcentra-api already running and healthy"
-                else
-                  echo "idcentra-api running but not responding, restarting..."
-                  docker compose down 2>/dev/null || true
-                  docker compose up -d 2>/dev/null || run_sudo docker compose up -d
-                  sleep 10
-                fi
-              else
-                echo "Starting idcentra containers..."
-                docker compose down 2>/dev/null || true
-                docker compose up -d 2>/dev/null || run_sudo docker compose up -d
-                sleep 10
-                echo "idcentra containers started"
-              fi
-              docker ps -a --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-              # Verify idcentra-api is responding
-              echo "=== Testing idcentra-api on port 15909 ==="
-              curl -sf --max-time 10 http://127.0.0.1:15909/ 2>&1 | head -5 || echo "WARNING: idcentra-api not responding on port 15909"
+            # Stop idcentra Docker container if running (conflicts with native process on port 8999)
+            # The idcentra production backend runs as a native Go binary (idc-prod-curren) on port 8999.
+            # The Docker compose is for development only and conflicts with the native process.
+            echo "=== Checking idcentra native backend on port 8999 ==="
+            if docker ps --filter "name=idcentra-api" --filter "status=running" -q | grep -q .; then
+              echo "Stopping conflicting idcentra Docker container..."
+              IDCENTRA_DIR="/var/www/html/idcentra_be"
+              cd "$IDCENTRA_DIR" && docker compose down 2>/dev/null || true
               cd "$DEPLOY_DIR"
+            fi
+            # Verify the native idcentra process is running on port 8999
+            if curl -sf --max-time 5 http://127.0.0.1:8999/ > /dev/null 2>&1; then
+              echo "idcentra native backend responding on port 8999"
             else
-              echo "WARNING: idcentra_be directory not found at $IDCENTRA_DIR"
+              echo "WARNING: idcentra native backend NOT responding on port 8999"
+              run_sudo ss -tlnp | grep 8999 || echo "Port 8999 not listening"
             fi
 
             # Install Docker if not present

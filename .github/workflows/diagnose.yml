@@ -7,10 +7,10 @@ jobs:
   diagnose:
     name: Check nginx + load balancer
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
 
     steps:
-      - name: Fix and wait for idcentra-api on Server 2
+      - name: Check idcentra on Server 2
         uses: appleboy/ssh-action@v1
         env:
           SUDO_PASS: ${{ secrets.WORKER_PASSWORD || secrets.DO_PASSWORD }}
@@ -22,86 +22,33 @@ jobs:
           proxy_username: ${{ secrets.DO_USER }}
           proxy_password: ${{ secrets.DO_PASSWORD }}
           envs: SUDO_PASS
-          command_timeout: 5m
+          command_timeout: 3m
           script: |
             set -e
             run_sudo() {
               echo "$SUDO_PASS" | sudo -S "$@"
             }
 
+            # Stop conflicting Docker container (it conflicts with native process on port 8999)
+            echo "=== Stopping idcentra Docker container ==="
             IDCENTRA_DIR="/var/www/html/idcentra_be"
-            cd "$IDCENTRA_DIR"
-
-            # Fix permissions
-            run_sudo mkdir -p tmp
-            run_sudo chmod 777 tmp
-
-            # Ensure network_mode: host is set
-            if ! grep -q 'network_mode' docker-compose.yml; then
-              run_sudo sed -i '/container_name: idcentra-api/a\    network_mode: "host"' docker-compose.yml
-              run_sudo sed -i '/15909/d' docker-compose.yml
-              run_sudo python3 -c "
-            with open('docker-compose.yml') as f:
-                lines = f.readlines()
-            result = []
-            for i, line in enumerate(lines):
-                stripped = line.strip()
-                if stripped == 'ports:':
-                    has_items = False
-                    for j in range(i+1, len(lines)):
-                        next_stripped = lines[j].strip()
-                        if not next_stripped:
-                            continue
-                        if next_stripped.startswith('-'):
-                            has_items = True
-                        break
-                    if not has_items:
-                        continue
-                result.append(line)
-            with open('docker-compose.yml', 'w') as f:
-                f.writelines(result)
-            "
-              echo "Patched docker-compose.yml"
+            if [ -d "$IDCENTRA_DIR" ]; then
+              cd "$IDCENTRA_DIR"
+              docker compose down 2>/dev/null || true
             fi
 
-            # Restart containers
-            echo "=== Restarting idcentra containers ==="
-            docker compose down 2>/dev/null || true
-            docker compose up -d 2>/dev/null || run_sudo docker compose up -d
-
-            # Wait for Go app to build and start (Air compilation can take 60-90s)
-            echo "=== Waiting for idcentra-api to build and start (up to 120s) ==="
-            for i in $(seq 1 24); do
-              if curl -sf --max-time 3 http://127.0.0.1:15909/ > /dev/null 2>&1; then
-                echo "idcentra-api is responding after $((i * 5)) seconds!"
-                break
-              fi
-              if [ "$i" -eq 24 ]; then
-                echo "idcentra-api NOT responding after 120 seconds"
-              fi
-              if [ $((i % 6)) -eq 0 ]; then
-                echo "--- Check $i/24 ($((i * 5))s) ---"
-                docker compose logs --tail=5 idcentra-api 2>/dev/null || true
-                run_sudo ss -tlnp | grep 15909 || echo "Port 15909 not listening yet"
-              fi
-              sleep 5
-            done
+            echo ""
+            echo "=== Open firewall for port 8999 from Server 1 ==="
+            run_sudo iptables -C INPUT -p tcp --dport 8999 -s 10.8.1.10 -j ACCEPT 2>/dev/null || \
+              run_sudo iptables -I INPUT 1 -p tcp --dport 8999 -s 10.8.1.10 -j ACCEPT 2>/dev/null || true
 
             echo ""
-            echo "=== Container status ==="
-            docker ps -a --filter "name=idcentra" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            echo "=== Native processes on idcentra ports ==="
+            run_sudo ss -tlnp | grep -E '8999|9000|9010|15909' || echo "No processes found"
 
             echo ""
-            echo "=== idcentra-api logs (last 40 lines) ==="
-            docker compose logs --tail=40 idcentra-api 2>/dev/null || docker logs idcentra-api --tail=40 2>&1 || echo "No logs"
-
-            echo ""
-            echo "=== Port 15909 binding ==="
-            run_sudo ss -tlnp | grep 15909 || echo "Port 15909 NOT listening"
-
-            echo ""
-            echo "=== Test locally ==="
-            curl -sf --max-time 10 http://127.0.0.1:15909/ 2>&1 | head -5 || echo "Port 15909 not responding"
+            echo "=== Test idcentra native backend on port 8999 locally ==="
+            curl -v --max-time 5 http://127.0.0.1:8999/ 2>&1 | head -15 || echo "Port 8999 not responding"
 
       - name: Test from Server 1
         uses: appleboy/ssh-action@v1
@@ -112,8 +59,8 @@ jobs:
           command_timeout: 3m
           script: |
             set -e
-            echo "=== Test connectivity to 10.8.1.14:15909 ==="
-            curl -v --max-time 10 http://10.8.1.14:15909/ 2>&1 | head -15 || echo "Can't reach 10.8.1.14:15909"
+            echo "=== Test connectivity to 10.8.1.14:8999 ==="
+            curl -v --max-time 10 http://10.8.1.14:8999/ 2>&1 | head -15 || echo "Can't reach 10.8.1.14:8999"
 
             echo ""
             echo "=== Reload nginx ==="
