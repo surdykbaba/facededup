@@ -19,41 +19,26 @@ jobs:
           command_timeout: 3m
           script: |
             set -e
+            echo "=== Find idcentra containers (running + stopped) ==="
+            docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}" | grep -i "idcent\|_be" || echo "No idcentra containers found"
+
+            echo ""
             echo "=== All containers ==="
-            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
+            docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
 
             echo ""
-            echo "=== All services listening on ports ==="
-            ss -tlnp | head -30
+            echo "=== Check idcentra docker-compose files ==="
+            find /home -name "docker-compose*" -path "*idcent*" 2>/dev/null || echo "No idcentra docker-compose found"
+            find /home -name "docker-compose*" 2>/dev/null | head -10
 
             echo ""
-            echo "=== Check for idcentra in Docker ==="
-            docker ps -a --format "{{.Names}} {{.Image}} {{.Ports}}" | grep -i "idcent\|rh-\|backend\|front\|web\|app\|node\|next\|react" || echo "No obvious idcentra containers found"
+            echo "=== Test api.rhwdp.gov.ng via our nginx ==="
+            curl -sf --max-time 5 -H "Host: api.rhwdp.gov.ng" http://127.0.0.1/ 2>&1 | head -5 || echo "FAILED"
 
             echo ""
-            echo "=== Check for idcentra in systemd ==="
-            systemctl list-units --type=service --state=running 2>/dev/null | grep -i "idcent\|node\|next\|pm2\|web\|app" || echo "No matching systemd services"
+            echo "=== Test idcentra.com via our nginx ==="
+            curl -sf --max-time 5 -H "Host: idcentra.com" http://127.0.0.1/ 2>&1 | head -5 || echo "FAILED"
 
             echo ""
-            echo "=== Check pm2 processes ==="
-            pm2 list 2>/dev/null || echo "pm2 not running"
-
-            echo ""
-            echo "=== Check nginx configs for idcentra ==="
-            find /etc/nginx -name "*.conf" -exec grep -l "idcentra" {} \; 2>/dev/null || echo "No nginx configs mention idcentra"
-
-            echo ""
-            echo "=== Check system nginx config ==="
-            cat /etc/nginx/sites-enabled/* 2>/dev/null || echo "No sites-enabled"
-
-            echo ""
-            echo "=== Docker networks ==="
-            docker network ls
-
-            echo ""
-            echo "=== Inspect rh-backend container ==="
-            docker inspect rh-backend --format '{{.Config.Image}} {{.NetworkSettings.Ports}} {{json .Config.Env}}' 2>/dev/null || echo "rh-backend not found"
-
-            echo ""
-            echo "=== Check all listening ports ==="
-            ss -tlnp
+            echo "=== Nginx config test ==="
+            docker exec facededup-nginx nginx -t 2>&1
