@@ -1,152 +1,84 @@
-name: Diagnose Load Balancer
+name: Diagnose Servers
 
 on:
   workflow_dispatch:
 
 jobs:
-  diagnose:
-    name: Check nginx + load balancer
+  gpu-server:
+    name: Probe GPU Server (10.8.1.17)
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
-      - name: Investigate idcentra frontend on Server 2
+      - name: Probe GPU server via Server 1
         uses: appleboy/ssh-action@v1
-        env:
-          SUDO_PASS: ${{ secrets.WORKER_PASSWORD || secrets.DO_PASSWORD }}
         with:
-          host: ${{ secrets.WORKER_HOST }}
-          username: ${{ secrets.WORKER_USER }}
-          password: ${{ secrets.WORKER_PASSWORD }}
+          host: ${{ secrets.GPU_HOST }}
+          username: ${{ secrets.GPU_USER }}
+          password: ${{ secrets.GPU_PASSWORD }}
           proxy_host: ${{ secrets.DO_HOST }}
           proxy_username: ${{ secrets.DO_USER }}
           proxy_password: ${{ secrets.DO_PASSWORD }}
-          envs: SUDO_PASS
           command_timeout: 3m
           script: |
             set -e
-            run_sudo() {
-              echo "$SUDO_PASS" | sudo -S "$@"
-            }
-
-            echo "=== Old system nginx configs ==="
-            echo "--- /etc/nginx/sites-available/ ---"
-            ls -la /etc/nginx/sites-available/ 2>/dev/null || echo "No sites-available"
-            echo "--- /etc/nginx/sites-enabled/ ---"
-            ls -la /etc/nginx/sites-enabled/ 2>/dev/null || echo "No sites-enabled"
-            echo "--- /etc/nginx/conf.d/ ---"
-            ls -la /etc/nginx/conf.d/ 2>/dev/null || echo "No conf.d"
+            echo "=== OS Info ==="
+            cat /etc/os-release 2>/dev/null | head -5
+            uname -a
 
             echo ""
-            echo "=== Looking for idcentra nginx configs ==="
-            run_sudo grep -rl "idcentra" /etc/nginx/ 2>/dev/null || echo "No idcentra configs found in /etc/nginx/"
+            echo "=== CPU Info ==="
+            nproc
+            lscpu | grep -E "Model name|CPU\(s\)|Thread|Core" | head -5
 
             echo ""
-            echo "=== Cat any idcentra nginx config ==="
-            for f in $(run_sudo grep -rl "idcentra" /etc/nginx/ 2>/dev/null); do
-              echo "--- $f ---"
-              run_sudo cat "$f" 2>/dev/null | head -80
-              echo ""
-            done
+            echo "=== Memory ==="
+            free -h
 
             echo ""
-            echo "=== Idcentra directories in /var/www/ ==="
-            ls -la /var/www/ 2>/dev/null || echo "No /var/www/"
-            ls -la /var/www/html/ 2>/dev/null || echo "No /var/www/html/"
+            echo "=== Disk ==="
+            df -h / /home 2>/dev/null | head -5
 
             echo ""
-            echo "=== Looking for idcentra frontend files ==="
-            for dir in /var/www/html/idcentra /var/www/html/idcentra_fe /var/www/idcentra /var/www/html/idcentra.com; do
-              if [ -d "$dir" ]; then
-                echo "FOUND: $dir"
-                ls -la "$dir" | head -20
-                # Check for index.html or build output
-                if [ -f "$dir/index.html" ]; then
-                  echo "Has index.html"
-                  head -5 "$dir/index.html"
-                fi
-                if [ -d "$dir/build" ]; then
-                  echo "Has build/ directory"
-                  ls -la "$dir/build" | head -10
-                fi
-                if [ -d "$dir/dist" ]; then
-                  echo "Has dist/ directory"
-                  ls -la "$dir/dist" | head -10
-                fi
-              fi
-            done
+            echo "=== GPU Info ==="
+            nvidia-smi 2>/dev/null || echo "nvidia-smi not found"
+            lspci | grep -i nvidia 2>/dev/null || echo "No NVIDIA PCI devices"
+            lspci | grep -i vga 2>/dev/null || echo "No VGA devices"
 
             echo ""
-            echo "=== All directories in /var/www/html/ ==="
-            ls -d /var/www/html/*/ 2>/dev/null || echo "No subdirectories"
+            echo "=== CUDA ==="
+            nvcc --version 2>/dev/null || echo "nvcc not found"
+            ls /usr/local/cuda*/bin/nvcc 2>/dev/null || echo "No CUDA install found"
 
             echo ""
-            echo "=== Check idcentra_be for frontend references ==="
-            ls -la /var/www/html/idcentra_be/ 2>/dev/null | head -20
-            # Check if Go app serves static files
-            run_sudo grep -r "static\|template\|html\|public\|dist\|build\|frontend\|index" /var/www/html/idcentra_be/*.go 2>/dev/null | head -10 || echo "No .go files in root"
-            run_sudo grep -r "static\|template\|html\|public\|dist\|build\|frontend" /var/www/html/idcentra_be/.env 2>/dev/null | head -5 || echo "No frontend refs in .env"
+            echo "=== Docker ==="
+            docker --version 2>/dev/null || echo "Docker not installed"
+            docker compose version 2>/dev/null || echo "Docker Compose not installed"
 
             echo ""
-            echo "=== Native Go processes ==="
-            run_sudo ss -tlnp | grep -E '8999|9000|9010|3000|4000|5000' || echo "No processes found"
+            echo "=== NVIDIA Docker ==="
+            nvidia-container-cli --version 2>/dev/null || echo "nvidia-container-cli not found"
+            dpkg -l | grep nvidia-container 2>/dev/null || echo "nvidia-container-toolkit not installed"
+            docker info 2>/dev/null | grep -i runtime || echo "No docker runtime info"
 
             echo ""
-            echo "=== Check for any other web services (PM2, node, etc) ==="
-            pm2 list 2>/dev/null || echo "No PM2"
-            run_sudo systemctl list-units --type=service --state=running 2>/dev/null | grep -iE "idcentra|node|next|react|nuxt|web" || echo "No matching services"
+            echo "=== Python ==="
+            python3 --version 2>/dev/null || echo "No python3"
+            pip3 --version 2>/dev/null || echo "No pip3"
 
             echo ""
-            echo "=== Test idcentra backend routes ==="
-            echo "--- GET / ---"
-            curl -s --max-time 3 http://127.0.0.1:8999/ 2>/dev/null | head -3
-            echo ""
-            echo "--- GET /api ---"
-            curl -s --max-time 3 http://127.0.0.1:8999/api 2>/dev/null | head -3
-            echo ""
-            echo "--- GET /api/v1 ---"
-            curl -s --max-time 3 http://127.0.0.1:8999/api/v1 2>/dev/null | head -3
-            echo ""
-            echo "--- GET /health ---"
-            curl -s --max-time 3 http://127.0.0.1:8999/health 2>/dev/null | head -3
-            echo ""
-            echo "--- GET /index.html ---"
-            curl -s --max-time 3 http://127.0.0.1:8999/index.html 2>/dev/null | head -3
-
-      - name: Check other ports on Server 2
-        uses: appleboy/ssh-action@v1
-        env:
-          SUDO_PASS: ${{ secrets.WORKER_PASSWORD || secrets.DO_PASSWORD }}
-        with:
-          host: ${{ secrets.WORKER_HOST }}
-          username: ${{ secrets.WORKER_USER }}
-          password: ${{ secrets.WORKER_PASSWORD }}
-          proxy_host: ${{ secrets.DO_HOST }}
-          proxy_username: ${{ secrets.DO_USER }}
-          proxy_password: ${{ secrets.DO_PASSWORD }}
-          envs: SUDO_PASS
-          command_timeout: 3m
-          script: |
-            set -e
-            run_sudo() {
-              echo "$SUDO_PASS" | sudo -S "$@"
-            }
-
-            echo "=== All listening TCP ports ==="
-            run_sudo ss -tlnp 2>/dev/null | head -40
+            echo "=== Network - VPN connectivity ==="
+            ping -c 1 -W 2 10.8.1.10 2>/dev/null && echo "Can reach Server 1" || echo "Cannot reach Server 1"
+            ping -c 1 -W 2 10.8.1.14 2>/dev/null && echo "Can reach Server 2" || echo "Cannot reach Server 2"
 
             echo ""
-            echo "=== Check for frontend app processes ==="
-            run_sudo ps aux | grep -iE "node|next|nuxt|react|vue|angular|serve|nginx" | grep -v grep || echo "No frontend processes"
+            echo "=== Listening ports ==="
+            ss -tlnp 2>/dev/null | head -20 || echo "Cannot check ports"
 
             echo ""
-            echo "=== Check port 9000 (swiftend_idcent) ==="
-            curl -s --max-time 3 http://127.0.0.1:9000/ 2>/dev/null | head -5 || echo "No response on 9000"
+            echo "=== Docker containers running ==="
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "No containers"
 
             echo ""
-            echo "=== Check port 9010 (idcentra_go_sta) ==="
-            curl -s --max-time 3 http://127.0.0.1:9010/ 2>/dev/null | head -5 || echo "No response on 9010"
-
-            echo ""
-            echo "=== Check port 3000 (common frontend port) ==="
-            curl -s --max-time 3 http://127.0.0.1:3000/ 2>/dev/null | head -5 || echo "No response on 3000"
+            echo "=== Git ==="
+            git --version 2>/dev/null || echo "No git"
