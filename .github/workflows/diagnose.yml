@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  gpu-server:
-    name: Probe GPU Server from Server 1
+  probe:
+    name: Probe 10.8.1.16 from Server 1
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
-      - name: Probe GPU server connectivity from Server 1
+      - name: Check 10.8.1.16 connectivity
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DO_HOST }}
@@ -18,38 +18,19 @@ jobs:
           password: ${{ secrets.DO_PASSWORD }}
           command_timeout: 3m
           script: |
-            set -e
-            echo "=== Ping GPU server (10.8.1.17) ==="
-            ping -c 3 -W 2 10.8.1.17 || echo "PING FAILED"
+            echo "=== Ping 10.8.1.16 ==="
+            ping -c 3 -W 2 10.8.1.16 || echo "PING FAILED"
 
             echo ""
             echo "=== Check SSH port 22 ==="
-            timeout 5 bash -c 'echo > /dev/tcp/10.8.1.17/22' 2>/dev/null && echo "Port 22 OPEN" || echo "Port 22 CLOSED"
+            timeout 5 bash -c 'echo > /dev/tcp/10.8.1.16/22' 2>/dev/null && echo "Port 22 OPEN" || echo "Port 22 CLOSED"
 
             echo ""
-            echo "=== Check common alternative SSH ports ==="
-            for port in 2222 2200 8022 22222; do
-              timeout 3 bash -c "echo > /dev/tcp/10.8.1.17/$port" 2>/dev/null && echo "Port $port OPEN" || echo "Port $port closed"
-            done
+            echo "=== Try SSH ==="
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o PasswordAuthentication=yes Admin1@10.8.1.16 'echo SSH_SUCCESS' 2>&1 | tail -5 || echo "SSH connection failed"
 
             echo ""
             echo "=== Scan common ports ==="
-            for port in 22 80 443 3389 5900 8000 8080 8443 9090; do
-              timeout 2 bash -c "echo > /dev/tcp/10.8.1.17/$port" 2>/dev/null && echo "Port $port OPEN" || true
+            for port in 22 80 443 2222 3389 5900 8000 8080 8443 9090; do
+              timeout 2 bash -c "echo > /dev/tcp/10.8.1.16/$port" 2>/dev/null && echo "Port $port OPEN" || true
             done
-
-            echo ""
-            echo "=== Try nmap if available ==="
-            nmap -Pn -p 22,80,443,2222,3389,5900,8000,8080,8443,9090 10.8.1.17 2>/dev/null || echo "nmap not available"
-
-            echo ""
-            echo "=== Try SSH with verbose ==="
-            sshpass -p 'Admin123@.' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -vv Admin1@10.8.1.17 'echo connected' 2>&1 | tail -20 || echo "SSH FAILED"
-
-            echo ""
-            echo "=== Check VPN interface ==="
-            ip addr show | grep -A2 "tun\|wg\|10.8.1" || echo "No VPN interface found"
-
-            echo ""
-            echo "=== Route to 10.8.1.17 ==="
-            ip route get 10.8.1.17 2>/dev/null || echo "No route"
