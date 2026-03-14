@@ -5,80 +5,51 @@ on:
 
 jobs:
   gpu-server:
-    name: Probe GPU Server (10.8.1.17)
+    name: Probe GPU Server from Server 1
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
-      - name: Probe GPU server via Server 1
+      - name: Probe GPU server connectivity from Server 1
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.GPU_HOST }}
-          username: ${{ secrets.GPU_USER }}
-          password: ${{ secrets.GPU_PASSWORD }}
-          proxy_host: ${{ secrets.DO_HOST }}
-          proxy_username: ${{ secrets.DO_USER }}
-          proxy_password: ${{ secrets.DO_PASSWORD }}
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          password: ${{ secrets.DO_PASSWORD }}
           command_timeout: 3m
           script: |
             set -e
-            echo "=== OS Info ==="
-            cat /etc/os-release 2>/dev/null | head -5
-            uname -a
+            echo "=== Ping GPU server (10.8.1.17) ==="
+            ping -c 3 -W 2 10.8.1.17 || echo "PING FAILED"
 
             echo ""
-            echo "=== CPU Info ==="
-            nproc
-            lscpu | grep -E "Model name|CPU\(s\)|Thread|Core" | head -5
+            echo "=== Check SSH port 22 ==="
+            timeout 5 bash -c 'echo > /dev/tcp/10.8.1.17/22' 2>/dev/null && echo "Port 22 OPEN" || echo "Port 22 CLOSED"
 
             echo ""
-            echo "=== Memory ==="
-            free -h
+            echo "=== Check common alternative SSH ports ==="
+            for port in 2222 2200 8022 22222; do
+              timeout 3 bash -c "echo > /dev/tcp/10.8.1.17/$port" 2>/dev/null && echo "Port $port OPEN" || echo "Port $port closed"
+            done
 
             echo ""
-            echo "=== Disk ==="
-            df -h / /home 2>/dev/null | head -5
+            echo "=== Scan common ports ==="
+            for port in 22 80 443 3389 5900 8000 8080 8443 9090; do
+              timeout 2 bash -c "echo > /dev/tcp/10.8.1.17/$port" 2>/dev/null && echo "Port $port OPEN" || true
+            done
 
             echo ""
-            echo "=== GPU Info ==="
-            nvidia-smi 2>/dev/null || echo "nvidia-smi not found"
-            lspci | grep -i nvidia 2>/dev/null || echo "No NVIDIA PCI devices"
-            lspci | grep -i vga 2>/dev/null || echo "No VGA devices"
+            echo "=== Try nmap if available ==="
+            nmap -Pn -p 22,80,443,2222,3389,5900,8000,8080,8443,9090 10.8.1.17 2>/dev/null || echo "nmap not available"
 
             echo ""
-            echo "=== CUDA ==="
-            nvcc --version 2>/dev/null || echo "nvcc not found"
-            ls /usr/local/cuda*/bin/nvcc 2>/dev/null || echo "No CUDA install found"
+            echo "=== Try SSH with verbose ==="
+            sshpass -p 'Admin123@.' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -vv Admin1@10.8.1.17 'echo connected' 2>&1 | tail -20 || echo "SSH FAILED"
 
             echo ""
-            echo "=== Docker ==="
-            docker --version 2>/dev/null || echo "Docker not installed"
-            docker compose version 2>/dev/null || echo "Docker Compose not installed"
+            echo "=== Check VPN interface ==="
+            ip addr show | grep -A2 "tun\|wg\|10.8.1" || echo "No VPN interface found"
 
             echo ""
-            echo "=== NVIDIA Docker ==="
-            nvidia-container-cli --version 2>/dev/null || echo "nvidia-container-cli not found"
-            dpkg -l | grep nvidia-container 2>/dev/null || echo "nvidia-container-toolkit not installed"
-            docker info 2>/dev/null | grep -i runtime || echo "No docker runtime info"
-
-            echo ""
-            echo "=== Python ==="
-            python3 --version 2>/dev/null || echo "No python3"
-            pip3 --version 2>/dev/null || echo "No pip3"
-
-            echo ""
-            echo "=== Network - VPN connectivity ==="
-            ping -c 1 -W 2 10.8.1.10 2>/dev/null && echo "Can reach Server 1" || echo "Cannot reach Server 1"
-            ping -c 1 -W 2 10.8.1.14 2>/dev/null && echo "Can reach Server 2" || echo "Cannot reach Server 2"
-
-            echo ""
-            echo "=== Listening ports ==="
-            ss -tlnp 2>/dev/null | head -20 || echo "Cannot check ports"
-
-            echo ""
-            echo "=== Docker containers running ==="
-            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "No containers"
-
-            echo ""
-            echo "=== Git ==="
-            git --version 2>/dev/null || echo "No git"
+            echo "=== Route to 10.8.1.17 ==="
+            ip route get 10.8.1.17 2>/dev/null || echo "No route"
